@@ -1,0 +1,376 @@
+execution_meta:
+  batch_id: "YYYYMMDD_HHMMSS"
+  final_cases_path: "06_final_test_cases.yaml"
+  final_cases_sha256: "从 07_case_design_gate.json 复制最终用例 SHA-256"
+  case_design_gate_path: "07_case_design_gate.json"
+  execution_plan_path: "10_browser_execution_plan.yaml"
+  execution_plan_sha256: "从 10_execution_plan_gate.json 复制执行计划 SHA-256"
+  execution_plan_gate_path: "10_execution_plan_gate.json"
+  semantic_contract_version: "2.0"
+  execution_mode: "qualification"
+  priority_execution_policy:
+    version: "1.1"
+    order: ["P0", "P1", "P2"]
+    complete_p0_before_lower_priorities: true
+    stop_when_all_p0_failed: true
+    blocked_triggers_stop: false
+    unstarted_status: "not_run"
+    not_run_reason_code: "p0_all_failed_stop_gate"
+  priority_gate:
+    evaluated_after_priority: "P0"
+    p0_total: 1
+    p0_completed: 1
+    p0_failed: 0
+    p0_blocked: 0
+    triggered: false
+    reason_code: ""
+    skipped_priorities: []
+    not_run_case_ids: []
+  retry_policy_version: "3.0"
+  retry_rule: "按P0/P1/P2分批；先完成全部P0最终裁决；仅当全部P0最终均为failed时停止P1/P2；任一P0为passed或blocked则继续；资格执行全量双跑；首轮未稳定通过则三遍裁决"
+  evidence_manifest_version: "2.0"
+  browser_runtime:
+    browser: "chromium"
+    headless: false
+    mode: "headed"
+    config_source: "builtin_framework/config.yaml"
+  input_sha256:
+    requirements: "当前需求输入的64位SHA-256"
+    environment: "当前环境说明/探测结果的64位SHA-256"
+  scope_matrix:
+    - track: "功能UI"
+      status: "executed"
+      reason: "本轮核心测试范围"
+      coverage: "最终用例全部执行"
+      artifact: "18_测试用例_执行回填版.xlsx"
+    - track: "代码走查"
+      status: "skipped"
+      reason: "未提供当前版本代码库"
+      coverage: "无"
+      artifact: "未产出"
+    - track: "API契约"
+      status: "skipped"
+      reason: "未提供当前版本接口文档；造数和辅助观察不计独立API测试"
+      coverage: "无"
+      artifact: "未产出"
+  resource_budget:
+    estimated_attempts: 6
+    estimated_minutes: 30
+    actual_attempts: 7
+    actual_minutes: 34
+
+execution_results:
+  - execution_id: "EXE-001"
+    case_id: "TC-001"
+    status: "passed"
+    stability: "stable"
+    semantic_contract_sha256: &tc001_hash "从 07_case_design_gate.json 的 semantic_contracts.TC-001 复制"
+    execution_trace: &tc001_trace
+      execution_profile: "goods_create"
+      executor_capability: "scenario"
+      primary_channel: "ui"
+      intent_snapshot: {kind: "scenario", polarity: "positive", interface: "ui", field_id: "", input_class: "", expected_outcome: "committed"}
+    actual_result: "商品 QA商品_20260829 已创建，goods_id=12345，列表可见"
+    result_summary:
+      expected: "商品保存成功并出现在列表"
+      actual: "商品 QA商品_20260829 已创建且列表可见"
+      key_message: "创建成功"
+      mutation: true
+      object_id: "goods_id=12345"
+    observations: &tc001_observations
+      goods_id: {value: "12345", source: "api", evidence_refs: ["api:goods/12345"]}
+      goods_name: {value: "QA商品_20260829", source: "ui", evidence_refs: ["TC-001.png"]}
+      list_row_visible: {value: true, source: "ui", evidence_refs: ["TC-001.png"]}
+      mutation_committed: {value: true, source: "api", evidence_refs: ["api:goods/12345"]}
+    produced_data: &tc001_produced
+      goods_id: "12345"
+      goods_name: "QA商品_20260829"
+      list_row_visible: true
+      mutation_committed: true
+    selected_attempt: 1
+    retry_policy:
+      minimum_attempts: 2
+      required_attempts: 2
+      third_attempt_required: false
+      single_run_exempt: false
+      full_retry_upgraded: false
+      priority: "P0"
+      reason: "首两遍均通过"
+    attempts:
+      - attempt: 1
+        status: "passed"
+        semantic_contract_sha256: *tc001_hash
+        execution_trace: *tc001_trace
+        observations: *tc001_observations
+        produced_data: *tc001_produced
+        evidence:
+          screenshots: ["artifacts/screenshots/TC-001_A1_assertion.png"]
+          manifest:
+            - file: "TC-001_A1_assertion.png"
+              sha256: "替换为本轮截图文件的64位SHA-256"
+              case_id: "TC-001"
+              attempt: 1
+              assertion_moment: "本次尝试保存后列表出现目标商品"
+              target: "商品列表目标行"
+              browser: "chromium"
+              headless: false
+              evidence_scope: "assertion_state_view"
+              semantic_keys: ["goods_name", "list_row_visible"]
+              content_text: "商品列表显示 QA商品_20260829"
+              observed_target_text: "QA商品_20260829"
+              content_anchors: ["QA商品_20260829"]
+              content_verified: true
+              verification_method: "text_anchor"
+      - attempt: 2
+        status: "passed"
+        semantic_contract_sha256: *tc001_hash
+        execution_trace: *tc001_trace
+        observations: *tc001_observations
+        produced_data: *tc001_produced
+        evidence:
+          screenshots: ["artifacts/screenshots/TC-001_A2_assertion.png"]
+          manifest:
+            - file: "TC-001_A2_assertion.png"
+              sha256: "替换为本轮截图文件的64位SHA-256"
+              case_id: "TC-001"
+              attempt: 2
+              assertion_moment: "本次尝试保存后列表出现目标商品"
+              target: "商品列表目标行"
+              browser: "chromium"
+              headless: false
+              evidence_scope: "assertion_state_view"
+              semantic_keys: ["goods_name", "list_row_visible"]
+              content_text: "商品列表显示 QA商品_20260829"
+              observed_target_text: "QA商品_20260829"
+              content_anchors: ["QA商品_20260829"]
+              content_verified: true
+              verification_method: "text_anchor"
+    evidence:
+      screenshots: ["artifacts/screenshots/TC-001.png"]
+      logs: ["runtime/TC-001.log"]
+      manifest:
+        - file: "TC-001.png"
+          sha256: "替换为截图文件的64位SHA-256"
+          case_id: "TC-001"
+          assertion_moment: "保存后列表出现目标商品"
+          target: "商品列表目标行"
+          browser: "chromium"
+          headless: false
+          selected_attempt: 1
+          source_attempt_file: "TC-001_A1_assertion.png"
+          evidence_scope: "assertion_state_view"
+          semantic_keys: ["goods_name", "list_row_visible"]
+          content_text: "商品列表显示 QA商品_20260829"
+          observed_target_text: "QA商品_20260829"
+          content_anchors: ["QA商品_20260829"]
+          content_verified: true
+          verification_method: "text_anchor"
+    defect_suspected: false
+    blocker_type: ""
+    blocker_reason: ""
+    telemetry: {duration_seconds: 620, refresh_count: 1, login_recaptures: 0}
+
+  - execution_id: "EXE-002"
+    case_id: "TC-002"
+    status: "passed"
+    stability: "stable"
+    semantic_contract_sha256: &tc002_hash "从 07_case_design_gate.json 的 semantic_contracts.TC-002 复制"
+    execution_trace: &tc002_trace
+      execution_profile: "goods_field"
+      executor_capability: "field_validation"
+      primary_channel: "ui"
+      intent_snapshot: {kind: "field_validation", polarity: "positive", interface: "ui", field_id: "goods.name", input_class: "valid", expected_outcome: "accepted"}
+    actual_result: "商品 goods_id=12346 保存成功；重新打开后商品名称回显 QA商品ABC123，与输入值一致"
+    result_summary:
+      expected: "商品名称保存后重新打开仍回显输入值"
+      actual: "输入值和保存后回显值均为 QA商品ABC123"
+      key_message: "持久化值一致"
+      mutation: true
+      object_id: "goods_id=12346"
+    observations: &tc002_observations
+      object_id: {value: "12346", source: "api", evidence_refs: ["api:goods/12346"]}
+      input_value: {value: "QA商品ABC123", source: "runtime", evidence_refs: ["runtime/TC-002_execution.json"]}
+      persisted_value: {value: "QA商品ABC123", source: "ui", evidence_refs: ["TC-002.png"]}
+      persistence_verified: {value: true, source: "runtime", evidence_refs: ["runtime/TC-002_execution.json"]}
+      mutation_committed: {value: true, source: "api", evidence_refs: ["api:goods/12346"]}
+    produced_data: &tc002_produced
+      object_id: "12346"
+      input_value: "QA商品ABC123"
+      persisted_value: "QA商品ABC123"
+      persistence_verified: true
+      mutation_committed: true
+    selected_attempt: 1
+    retry_policy:
+      minimum_attempts: 2
+      required_attempts: 2
+      third_attempt_required: false
+      single_run_exempt: false
+      full_retry_upgraded: false
+      priority: "P2"
+      reason: "首两遍均通过"
+    attempts:
+      - attempt: 1
+        status: "passed"
+        semantic_contract_sha256: *tc002_hash
+        execution_trace: *tc002_trace
+        observations: *tc002_observations
+        produced_data: *tc002_produced
+        evidence:
+          screenshots: ["artifacts/screenshots/TC-002_A1_assertion.png"]
+          manifest:
+            - {file: "TC-002_A1_assertion.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-002", attempt: 1, assertion_moment: "重新打开同一商品并读取名称回显", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["persisted_value"], content_text: "商品名称 QA商品ABC123", observed_target_text: "商品名称 QA商品ABC123", content_anchors: ["QA商品ABC123"], content_verified: true, verification_method: "text_anchor"}
+      - attempt: 2
+        status: "passed"
+        semantic_contract_sha256: *tc002_hash
+        execution_trace: *tc002_trace
+        observations: *tc002_observations
+        produced_data: *tc002_produced
+        evidence:
+          screenshots: ["artifacts/screenshots/TC-002_A2_assertion.png"]
+          manifest:
+            - {file: "TC-002_A2_assertion.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-002", attempt: 2, assertion_moment: "重新打开同一商品并读取名称回显", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["persisted_value"], content_text: "商品名称 QA商品ABC123", observed_target_text: "商品名称 QA商品ABC123", content_anchors: ["QA商品ABC123"], content_verified: true, verification_method: "text_anchor"}
+    evidence:
+      screenshots: ["artifacts/screenshots/TC-002.png"]
+      manifest:
+        - file: "TC-002.png"
+          sha256: "替换为截图文件的64位SHA-256"
+          case_id: "TC-002"
+          assertion_moment: "保存后重新打开同一商品并读取名称回显"
+          target: "商品名称表单项"
+          browser: "chromium"
+          headless: false
+          selected_attempt: 1
+          source_attempt_file: "TC-002_A1_assertion.png"
+          evidence_scope: "assertion_target_container"
+          semantic_keys: ["persisted_value"]
+          content_text: "商品名称 QA商品ABC123"
+          observed_target_text: "商品名称 QA商品ABC123"
+          content_anchors: ["QA商品ABC123"]
+          content_verified: true
+          verification_method: "text_anchor"
+    defect_suspected: false
+    blocker_type: ""
+    blocker_reason: ""
+    telemetry: {duration_seconds: 420, refresh_count: 0, login_recaptures: 0}
+
+  - execution_id: "EXE-003"
+    case_id: "TC-003"
+    status: "failed"
+    stability: "unstable"
+    semantic_contract_sha256: &tc003_hash "从 07_case_design_gate.json 的 semantic_contracts.TC-003 复制"
+    execution_trace: &tc003_trace
+      execution_profile: "goods_field"
+      executor_capability: "field_validation"
+      primary_channel: "ui"
+      intent_snapshot: {kind: "field_validation", polarity: "negative", interface: "ui", field_id: "goods.name", input_class: "empty", expected_outcome: "rejected"}
+    actual_result: "商品名称为空仍产生新增商品记录，未满足禁止写入的硬断言"
+    result_summary:
+      expected: "空值提交被阻止且不写入商品"
+      actual: "页面显示提示但接口查询到新增记录 goods_id=12347"
+      key_message: "禁止写入断言失败"
+      mutation: true
+      object_id: "goods_id=12347"
+    observations: &tc003_failed_observations
+      prompt_text: {value: "商品名称不能为空", source: "ui", evidence_refs: ["TC-003.png"]}
+      mutation_committed: {value: true, source: "api", evidence_refs: ["api:goods/12347"]}
+    produced_data: &tc003_failed_produced {prompt_text: "商品名称不能为空", mutation_committed: true}
+    feedback_observation: &tc003_feedback
+      presentation: "inline"
+      text: "商品名称不能为空"
+      appeared_after_ms: 1046
+      auto_dismissed: true
+      screenshot_path: "TC-003.png"
+    selected_attempt: 3
+    retry_policy:
+      minimum_attempts: 2
+      required_attempts: 3
+      third_attempt_required: true
+      single_run_exempt: false
+      full_retry_upgraded: false
+      priority: "P1"
+      reason: "首两遍未形成稳定通过，已按第三遍证据裁决"
+    attempts:
+      - attempt: 1
+        status: "failed"
+        semantic_contract_sha256: *tc003_hash
+        execution_trace: *tc003_trace
+        observations: *tc003_failed_observations
+        produced_data: *tc003_failed_produced
+        feedback_observation: {presentation: "inline", text: "商品名称不能为空", appeared_after_ms: 1021, auto_dismissed: true, screenshot_path: "TC-003_A1_assertion.png"}
+        evidence:
+          screenshots: ["artifacts/screenshots/TC-003_A1_assertion.png"]
+          manifest:
+            - {file: "TC-003_A1_assertion.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-003", attempt: 1, assertion_moment: "空值提交后", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["prompt_text"], content_text: "商品名称不能为空", observed_target_text: "商品名称不能为空", content_anchors: ["商品名称", "不能为空"], content_verified: true, verification_method: "ocr"}
+      - attempt: 2
+        status: "failed"
+        semantic_contract_sha256: *tc003_hash
+        execution_trace: *tc003_trace
+        observations: *tc003_failed_observations
+        produced_data: *tc003_failed_produced
+        feedback_observation: {presentation: "inline", text: "商品名称不能为空", appeared_after_ms: 986, auto_dismissed: true, screenshot_path: "TC-003_A2_assertion.png"}
+        evidence:
+          screenshots: ["artifacts/screenshots/TC-003_A2_assertion.png"]
+          manifest:
+            - {file: "TC-003_A2_assertion.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-003", attempt: 2, assertion_moment: "空值提交后", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["prompt_text"], content_text: "商品名称不能为空", observed_target_text: "商品名称不能为空", content_anchors: ["商品名称", "不能为空"], content_verified: true, verification_method: "ocr"}
+      - attempt: 3
+        status: "failed"
+        semantic_contract_sha256: *tc003_hash
+        execution_trace: *tc003_trace
+        observations: *tc003_failed_observations
+        produced_data: *tc003_failed_produced
+        feedback_observation: {presentation: "inline", text: "商品名称不能为空", appeared_after_ms: 1046, auto_dismissed: true, screenshot_path: "TC-003_A3_assertion.png"}
+        evidence:
+          screenshots: ["artifacts/screenshots/TC-003_A3_assertion.png"]
+          manifest:
+            - {file: "TC-003_A3_assertion.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-003", attempt: 3, assertion_moment: "空值提交后", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["prompt_text"], content_text: "商品名称不能为空", observed_target_text: "商品名称不能为空", content_anchors: ["商品名称", "不能为空"], content_verified: true, verification_method: "ocr"}
+    evidence:
+      screenshots: ["artifacts/screenshots/TC-003.png"]
+      logs: ["runtime/TC-003.log"]
+      manifest:
+        - file: "TC-003.png"
+          sha256: "替换为截图文件的64位SHA-256"
+          case_id: "TC-003"
+          assertion_moment: "空值提交后"
+          target: "商品名称表单项"
+          browser: "chromium"
+          headless: false
+          selected_attempt: 3
+          source_attempt_file: "TC-003_A3_assertion.png"
+          evidence_scope: "assertion_target_container"
+          semantic_keys: ["prompt_text"]
+          content_text: "商品名称不能为空"
+          observed_target_text: "商品名称不能为空"
+          content_anchors: ["商品名称", "不能为空"]
+          content_verified: true
+          verification_method: "ocr"
+    failed_step_no: 1
+    defect_suspected: true
+    defect_summary: "商品名称为空时仍写入商品记录"
+    defect:
+      severity_suggestion: "S1"
+      confirmation_status: "待人工确认"
+      owner: "待分配"
+      defect_status: "待确认"
+      regression_status: "待回归"
+    blocker_type: ""
+    blocker_reason: ""
+    telemetry: {duration_seconds: 1000, refresh_count: 3, login_recaptures: 0}
+
+summary:
+  total: 3
+  passed: 2
+  failed: 1
+  blocked: 0
+  not_run: 0
+  total_cases: 3
+  executed_cases: 3
+  total_attempts: 7
+  third_attempt_cases: 1
+  unstable_cases: 1
+  single_run_exempt_cases: 0
+  full_retry_upgrades: 0
+  first_passed: 2
+  first_pass_rate: 66.67
+  final_pass_rate_including_blocked: 66.67
+  final_pass_rate_judged_only: 66.67
+  telemetry: {duration_seconds: 2040, refresh_count: 4, login_recaptures: 0}

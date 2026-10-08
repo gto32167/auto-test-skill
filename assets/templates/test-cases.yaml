@@ -1,0 +1,313 @@
+case_source:
+  artifact_role: "final"
+  mode: "full"
+  generated_from: "05_test_points.yaml"
+  priority_policy: "strict_p0_p1_p2"
+
+case_ordering:
+  policy: "prd_port_page_group"
+  source: "01_需求原文.docx"
+  group_sequence: ["供应商端-商品创建页"]
+
+executor_profiles:
+  goods_create:
+    capabilities: ["scenario"]
+    channels: ["ui"]
+  goods_field:
+    capabilities: ["field_validation"]
+    channels: ["ui"]
+
+review_audit:
+  environment_sample_case_ids: ["TC-001"]
+  environment_probes:
+    - case_id: "TC-001"
+      status: "executable"
+      channels_tried: ["ui", "api_setup"]
+      evidence: "运行时环境探测日志路径或截图索引"
+      revision_action: ""
+  score_distribution:
+    scored_cases: 3
+    perfect_scores: 0
+    perfect_score_justification: ""
+
+test_cases:
+  - case_id: "TC-001"
+    test_point_id: "TP-001"
+    case_title: "合法数据创建商品"
+    requirement_ids: ["REQ-001"]
+    module: "商品创建"
+    feature_group: "供应商端-商品创建页"
+    granularity: "scenario"
+    test_intent:
+      kind: "scenario"
+      polarity: "positive"
+      interface: "ui"
+      field_id: ""
+      input_class: ""
+      expected_outcome: "committed"
+    execution_profile: "goods_create"
+    execution_contract:
+      capability: "scenario"
+      primary_channel: "ui"
+      setup_separated: true
+    verification_point: "商品保存成功"
+    priority: "P0"
+    priority_rationale: "商品创建是核心业务主流程，失败会阻断商品销售。"
+    level: "L2"
+    automation_candidate: "high"
+    operation_type: "create"
+    preconditions:
+      - "已登录后台并具备商品创建权限"
+    test_data:
+      - name: "goods_name"
+        value: "QA商品_${timestamp}"
+        source: "运行时生成"
+    steps:
+      - step_no: 1
+        action: "open_url"
+        target: "/goods/create"
+        input: ""
+        expected_ui_feedback: "打开商品创建页"
+      - step_no: 2
+        action: "input"
+        target: "商品名称"
+        input: "${goods_name}"
+        expected_ui_feedback: "输入框显示商品名称"
+      - step_no: 3
+        action: "click"
+        target: "保存"
+        input: ""
+        expected_ui_feedback: "保存请求完成"
+    formal_steps:
+      - step_no: 1
+        action: "进入商品创建页面"
+        target: "商品管理"
+      - step_no: 2
+        action: "填写唯一商品名称"
+        target: "商品名称"
+      - step_no: 3
+        action: "保存商品并返回商品列表"
+        target: "保存按钮"
+    assertions:
+      - assert_id: "A-001"
+        type: "table_row"
+        target: "商品列表"
+        expected: "存在名称为 ${goods_name} 的商品记录"
+        severity: "critical"
+    cleanup:
+      - "按 goods_id 删除本用例商品"
+    result_contract:
+      verdict: "all"
+      assertion_policy:
+        hard_keys: ["goods_id", "goods_name", "list_row_visible", "mutation_committed"]
+        soft_keys: []
+      required_produced_keys: ["goods_id", "goods_name", "list_row_visible", "mutation_committed"]
+      assertion_observation_keys: ["goods_id", "goods_name", "list_row_visible", "mutation_committed"]
+      screenshot_required: true
+      observations:
+        - key: "goods_id"
+          assertion_class: "hard"
+          source: "api"
+          operator: "non_empty"
+          evidence_required: true
+        - key: "goods_name"
+          assertion_class: "hard"
+          source: "ui"
+          operator: "non_empty"
+          evidence_required: true
+        - key: "list_row_visible"
+          assertion_class: "hard"
+          source: "ui"
+          operator: "equals"
+          expected: true
+          evidence_required: true
+        - key: "mutation_committed"
+          assertion_class: "hard"
+          source: "api"
+          operator: "equals"
+          expected: true
+          evidence_required: true
+
+  - case_id: "TC-002"
+    test_point_id: "TP-002"
+    case_title: "商品名称合法值"
+    requirement_ids: ["REQ-001"]
+    module: "商品创建"
+    feature_group: "供应商端-商品创建页"
+    granularity: "field"
+    test_intent:
+      kind: "field_validation"
+      polarity: "positive"
+      interface: "ui"
+      field_id: "goods.name"
+      input_class: "valid"
+      expected_outcome: "accepted"
+    execution_profile: "goods_field"
+    execution_contract:
+      capability: "field_validation"
+      primary_channel: "ui"
+      setup_separated: true
+    verification_point: "商品名称保存后仍回显合法值"
+    priority: "P2"
+    priority_rationale: "合法字段输入属于低风险基础校验，失败影响局部录入且可立即恢复。"
+    level: "L3"
+    automation_candidate: "high"
+    operation_type: "persisted_validation"
+    persistence_verification:
+      required: true
+      baseline_required: false
+      commit_required: true
+      reopen_or_query_required: true
+      compare_input_persisted: true
+    preconditions:
+      - "已登录后台并具备商品创建和查询权限"
+    test_data:
+      - name: "goods_name"
+        value: "QA商品ABC123"
+        source: "固定字段测试值"
+    steps:
+      - step_no: 1
+        action: "input"
+        target: "商品名称"
+        input: "${goods_name}"
+        expected_ui_feedback: "输入框保留原值"
+      - step_no: 2
+        action: "attempt_commit"
+        target: "保存"
+        input: ""
+        expected_ui_feedback: "商品保存请求完成"
+      - step_no: 3
+        action: "reopen_or_query"
+        target: "同一商品"
+        input: ""
+        expected_ui_feedback: "保存后商品名称可读取"
+    formal_steps:
+      - step_no: 1
+        action: "填写商品名称 QA商品ABC123 及其他合法必填信息"
+        target: "商品名称"
+      - step_no: 2
+        action: "保存商品"
+        target: "商品表单"
+      - step_no: 3
+        action: "按本轮商品唯一标识重新查询并打开同一商品"
+        target: "商品列表"
+      - step_no: 4
+        action: "比较输入值与保存后回显值"
+        target: "商品名称"
+    assertions:
+      - assert_id: "A-002"
+        type: "state"
+        target: "商品名称输入框"
+        expected: "保存后重新打开同一商品，商品名称回显 QA商品ABC123"
+        severity: "major"
+    cleanup:
+      - "按 object_id 清理本用例创建的商品"
+    result_contract:
+      verdict: "all"
+      assertion_policy:
+        hard_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed"]
+        soft_keys: []
+      required_produced_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed"]
+      assertion_observation_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed"]
+      screenshot_required: true
+      observations:
+        - key: "object_id"
+          assertion_class: "hard"
+          source: "api"
+          operator: "non_empty"
+          evidence_required: true
+        - key: "input_value"
+          assertion_class: "hard"
+          source: "runtime"
+          operator: "equals"
+          expected: "QA商品ABC123"
+          evidence_required: true
+        - key: "persisted_value"
+          assertion_class: "hard"
+          source: "ui"
+          operator: "equals"
+          expected: "QA商品ABC123"
+          evidence_required: true
+        - key: "persistence_verified"
+          assertion_class: "hard"
+          source: "runtime"
+          operator: "equals"
+          expected: true
+          evidence_required: true
+        - key: "mutation_committed"
+          assertion_class: "hard"
+          source: "api"
+          operator: "equals"
+          expected: true
+          evidence_required: true
+
+  - case_id: "TC-003"
+    test_point_id: "TP-003"
+    case_title: "商品名称空值拦截"
+    requirement_ids: ["REQ-001"]
+    module: "商品创建"
+    feature_group: "供应商端-商品创建页"
+    granularity: "field"
+    test_intent:
+      kind: "field_validation"
+      polarity: "negative"
+      interface: "ui"
+      field_id: "goods.name"
+      input_class: "empty"
+      expected_outcome: "rejected"
+    execution_profile: "goods_field"
+    execution_contract:
+      capability: "field_validation"
+      primary_channel: "ui"
+      setup_separated: true
+    verification_point: "商品名称必填提示"
+    priority: "P1"
+    priority_rationale: "必填拦截是主要业务校验，失效会产生不完整商品数据但影响范围可控。"
+    level: "L3"
+    automation_candidate: "high"
+    operation_type: "validation"
+    preconditions:
+      - "已登录后台并打开商品创建页"
+    test_data:
+      - name: "goods_name"
+        value: ""
+        source: "空值"
+    steps:
+      - step_no: 1
+        action: "click"
+        target: "保存"
+        input: ""
+        expected_ui_feedback: "触发表单校验"
+    formal_steps:
+      - step_no: 1
+        action: "商品名称保持为空并尝试保存"
+        target: "商品创建表单"
+    assertions:
+      - assert_id: "A-003"
+        type: "text"
+        target: "商品名称字段错误提示"
+        expected: "商品名称不能为空"
+        severity: "critical"
+    cleanup:
+      - "无需清理，表单未提交"
+    result_contract:
+      verdict: "all"
+      assertion_policy:
+        hard_keys: ["mutation_committed"]
+        soft_keys: ["prompt_text"]
+      required_produced_keys: ["prompt_text", "mutation_committed"]
+      assertion_observation_keys: ["prompt_text", "mutation_committed"]
+      screenshot_required: true
+      observations:
+        - key: "prompt_text"
+          assertion_class: "soft"
+          source: "ui"
+          operator: "contains"
+          expected: "商品名称不能为空"
+          evidence_required: true
+        - key: "mutation_committed"
+          assertion_class: "hard"
+          source: "api"
+          operator: "equals"
+          expected: false
+          evidence_required: true

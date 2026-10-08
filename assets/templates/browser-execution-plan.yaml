@@ -1,0 +1,255 @@
+execution_meta:
+  final_cases_path: "06_final_test_cases.yaml"
+  final_cases_sha256: "运行 validate_case_design.py 后填写最终用例 SHA-256"
+  case_design_gate_path: "07_case_design_gate.json"
+  semantic_contract_version: "2.0"
+  execution_mode: "qualification" # qualification=首次完整交付；risk_based_regression=有门禁基线的风险回归
+  browser_runtime:
+    browser: "chromium"
+    headless: false
+    mode: "headed"
+    config_source: "builtin_framework/config.yaml"
+  priority_execution_policy:
+    version: "1.1"
+    order: ["P0", "P1", "P2"]
+    complete_p0_before_lower_priorities: true
+    stop_when_all_p0_failed: true
+    blocked_triggers_stop: false
+    unstarted_status: "not_run"
+    not_run_reason_code: "p0_all_failed_stop_gate"
+  input_sha256:
+    requirements: "当前需求输入的64位SHA-256"
+    environment: "当前环境说明/探测结果的64位SHA-256"
+  resource_budget:
+    estimated_attempts: 6
+    estimated_minutes: 30
+
+browser_execution_plan:
+  # 必须按 P0 -> P1 -> P2 稳定排序；同一优先级内保持最终用例原顺序。
+  - execution_id: "EXE-001"
+    case_id: "TC-001"
+    semantic_contract_sha256: "从 07_case_design_gate.json 的 semantic_contracts.TC-001 复制"
+    execution_profile: "goods_create"
+    executor_capability: "scenario"
+    primary_channel: "ui"
+    intent_snapshot:
+      kind: "scenario"
+      polarity: "positive"
+      interface: "ui"
+      field_id: ""
+      input_class: ""
+      expected_outcome: "committed"
+    runtime_env:
+      base_url: ""
+      browser: "chromium"
+      # 资格执行默认有头；风险回归必须显式声明是否切换无头。
+      headless: false
+      config_source: "builtin_framework/config.yaml"
+      account_role: ""
+    setup_steps:
+      - step_no: 1
+        phase: "setup"
+        channel: "api"
+        semantic_action: "prepare_test_data"
+        purpose: "仅准备前置数据，不代替商品创建核心动作"
+    core_steps:
+      - step_no: 1
+        phase: "core"
+        channel: "ui"
+        semantic_action: "perform_operation"
+        browser_action: "按用例步骤通过页面创建商品"
+      - step_no: 2
+        phase: "core"
+        channel: "ui"
+        semantic_action: "observe_outcome"
+        browser_action: "在商品列表观察新商品"
+    planned_observation_keys: ["goods_id", "goods_name", "list_row_visible", "mutation_committed"]
+    estimated_minutes: 12
+    execution_budget:
+      minimum_attempts: 2
+      single_run_exemption:
+        applied: false
+    blocker_probe_plan:
+      channels: ["ui", "api_setup"]
+      probe_log_path: "runtime/TC-001_capability_probe.json"
+    state_wait_policy:
+      refresh_before_poll: true
+      timeout_seconds: 30
+      initial_interval_seconds: 0.5
+      max_interval_seconds: 4
+    evidence_plan:
+      screenshots: ["TC-001.png"]
+      semantic_keys: ["goods_name", "list_row_visible"]
+      api_semantic_keys: ["goods_id", "mutation_committed"]
+      assertion_moment: "商品保存后列表中出现目标商品"
+      target: "商品列表目标行"
+      browser: "chromium"
+      verification_method: "text_anchor"
+      content_anchors: ["${goods_name}"]
+      screenshot_scope: "assertion_state_view"
+      attempt_binding: "selected_attempt_only"
+      api_records: ["商品详情或列表查询响应"]
+      capture_on_failure: true
+
+  - execution_id: "EXE-002"
+    case_id: "TC-003"
+    semantic_contract_sha256: "从 07_case_design_gate.json 的 semantic_contracts.TC-003 复制"
+    execution_profile: "goods_field"
+    executor_capability: "field_validation"
+    primary_channel: "ui"
+    intent_snapshot:
+      kind: "field_validation"
+      polarity: "negative"
+      interface: "ui"
+      field_id: "goods.name"
+      input_class: "empty"
+      expected_outcome: "rejected"
+    runtime_env:
+      base_url: ""
+      browser: "chromium"
+      headless: false
+      config_source: "builtin_framework/config.yaml"
+      account_role: ""
+    setup_steps:
+      - step_no: 1
+        phase: "setup"
+        channel: "api"
+        semantic_action: "capture_baseline"
+        purpose: "记录提交前商品列表基线，仅用于副作用核验"
+    core_steps:
+      - step_no: 1
+        phase: "core"
+        channel: "ui"
+        semantic_action: "input_test_value"
+        browser_action: "保持商品名称为空"
+      - step_no: 2
+        phase: "core"
+        channel: "ui"
+        semantic_action: "attempt_commit"
+        browser_action: "点击保存"
+      - step_no: 3
+        phase: "core"
+        channel: "ui"
+        semantic_action: "observe_outcome"
+        browser_action: "读取必填提示并确认页面未跳转为成功状态"
+    planned_observation_keys: ["prompt_text", "mutation_committed"]
+    estimated_minutes: 10
+    execution_budget:
+      minimum_attempts: 2
+      single_run_exemption:
+        applied: false
+    blocker_probe_plan:
+      channels: ["ui", "api_observation"]
+      probe_log_path: "runtime/TC-003_capability_probe.json"
+    state_wait_policy:
+      refresh_before_poll: true
+      timeout_seconds: 15
+      initial_interval_seconds: 0.5
+      max_interval_seconds: 2
+    feedback_wait_policy:
+      baseline_before_action: true
+      presentations: ["modal", "toast", "inline", "banner"]
+      timeout_ms: 3000
+      poll_interval_ms: 100
+      screenshot_on_detection: true
+      classify_after_capture: true
+    locator_audit:
+      label: "商品名称"
+      field_name: "goods.name"
+      input_type: "text"
+      editable: "true"
+      nearest_container: "商品名称表单项"
+    evidence_plan:
+      screenshots: ["TC-003.png"]
+      semantic_keys: ["prompt_text"]
+      api_semantic_keys: ["mutation_committed"]
+      assertion_moment: "空值提交触发校验后"
+      target: "商品名称表单项和保存结果"
+      browser: "chromium"
+      verification_method: "ocr"
+      content_anchors: ["商品名称", "不能为空"]
+      screenshot_scope: "assertion_target_container"
+      attempt_binding: "selected_attempt_only"
+      api_records: ["提交前后商品列表差异"]
+      capture_on_failure: true
+
+  - execution_id: "EXE-003"
+    case_id: "TC-002"
+    semantic_contract_sha256: "从 07_case_design_gate.json 的 semantic_contracts.TC-002 复制"
+    execution_profile: "goods_field"
+    executor_capability: "field_validation"
+    primary_channel: "ui"
+    intent_snapshot:
+      kind: "field_validation"
+      polarity: "positive"
+      interface: "ui"
+      field_id: "goods.name"
+      input_class: "valid"
+      expected_outcome: "accepted"
+    runtime_env:
+      base_url: ""
+      browser: "chromium"
+      headless: false
+      config_source: "builtin_framework/config.yaml"
+      account_role: ""
+    setup_steps: []
+    core_steps:
+      - step_no: 1
+        phase: "core"
+        channel: "ui"
+        semantic_action: "input_test_value"
+        browser_action: "在商品名称输入合法测试值"
+      - step_no: 2
+        phase: "core"
+        channel: "ui"
+        semantic_action: "attempt_commit"
+        browser_action: "补齐其他合法必填信息并保存商品"
+      - step_no: 3
+        phase: "core"
+        channel: "ui"
+        semantic_action: "observe_persisted_outcome"
+        browser_action: "按唯一商品标识重新查询并打开同一商品，读取商品名称回显值"
+    planned_observation_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed"]
+    estimated_minutes: 8
+    execution_budget:
+      minimum_attempts: 2
+      # 仅 risk_based_regression 下的 P2 可改为 applied:true/minimum_attempts:1，
+      # 并补 baseline_input_sha256、historical_attempts、historical_passed、
+      # historical_stability、requirement_affected、baseline_execution_results_sha256、rationale。
+      single_run_exemption:
+        applied: false
+    blocker_probe_plan:
+      channels: ["ui"]
+      probe_log_path: "runtime/TC-002_capability_probe.json"
+    state_wait_policy:
+      refresh_before_poll: true
+      timeout_seconds: 15
+      initial_interval_seconds: 0.5
+      max_interval_seconds: 2
+    locator_audit:
+      label: "商品名称"
+      field_name: "goods.name"
+      input_type: "text"
+      editable: "true"
+      nearest_container: "商品名称表单项"
+    evidence_plan:
+      screenshots: ["TC-002.png"]
+      semantic_keys: ["persisted_value"]
+      api_semantic_keys: ["object_id", "mutation_committed"]
+      assertion_moment: "保存后重新打开同一商品并读取回显值"
+      target: "重新打开后的商品名称表单项"
+      browser: "chromium"
+      verification_method: "text_anchor"
+      content_anchors: ["QA商品ABC123"]
+      screenshot_scope: "assertion_target_container"
+      attempt_binding: "selected_attempt_only"
+      capture_on_failure: true
+
+blocked_cases: []
+
+coverage_check:
+  final_case_count: 3
+  planned_case_count: 3
+  blocked_case_count: 0
+  missing_case_ids: []
+  extra_case_ids: []

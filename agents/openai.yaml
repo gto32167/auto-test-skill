@@ -1,0 +1,7 @@
+interface:
+  display_name: "AI QA PRD Workflow"
+  short_description: "从PRD生成或从已有Excel规范化用例，并完成门禁执行与报告"
+  default_prompt: "Use $ai-qa-prd-workflow to generate cases from a PRD or normalize an existing testcase XLSX into the gated final-case chain before execution and reporting."
+
+policy:
+  allow_implicit_invocation: true

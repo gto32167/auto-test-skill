@@ -1,0 +1,62 @@
+coverage_profile:
+  mode: "full"
+  core_form_fields_present: true
+  required_granularities: ["scenario", "field"]
+  priority_policy: "strict_p0_p1_p2"
+
+test_points:
+  - test_point_id: "TP-001"
+    requirement_ids: ["REQ-001"]
+    module: "商品创建"
+    feature_group: "供应商端-商品创建页"
+    title: "合法数据创建商品"
+    granularity: "scenario"
+    polarity: "positive"
+    interface: "ui"
+    expected_outcome: "committed"
+    priority: "P0"
+    priority_rationale: "商品创建是核心业务主流程，失败会阻断商品销售。"
+    level: "L2"
+
+  - test_point_id: "TP-002"
+    requirement_ids: ["REQ-001"]
+    module: "商品创建"
+    feature_group: "供应商端-商品创建页"
+    title: "商品名称合法值"
+    granularity: "field"
+    polarity: "positive"
+    interface: "ui"
+    expected_outcome: "accepted"
+    field_id: "goods.name"
+    coverage_class: "valid"
+    priority: "P2"
+    priority_rationale: "合法字段输入属于低风险基础校验，失败影响局部录入且可立即恢复。"
+    level: "L3"
+
+  - test_point_id: "TP-003"
+    requirement_ids: ["REQ-001"]
+    module: "商品创建"
+    feature_group: "供应商端-商品创建页"
+    title: "商品名称空值"
+    granularity: "field"
+    polarity: "negative"
+    interface: "ui"
+    expected_outcome: "rejected"
+    field_id: "goods.name"
+    coverage_class: "empty"
+    priority: "P1"
+    priority_rationale: "必填拦截是主要业务校验，失效会产生不完整商品数据但影响范围可控。"
+    level: "L3"
+
+field_coverage:
+  - field_id: "goods.name"
+    required_classes: ["valid", "empty"]
+
+uncovered_risks:
+  - risk_id: "RISK-001"
+    description: ""
+    reason: ""
+
+assumptions:
+  - assumption_id: "ASM-001"
+    description: ""

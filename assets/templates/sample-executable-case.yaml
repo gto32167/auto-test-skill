@@ -1,0 +1,107 @@
+case_source:
+  artifact_role: "final"
+  mode: "full"
+
+executor_profiles:
+  contract_flow:
+    capabilities: ["scenario"]
+    channels: ["ui"]
+
+test_cases:
+  - case_id: "TC-CONTRACT-001"
+    test_point_id: "TP-CONTRACT-001"
+    case_title: "合同签署提交后显示成功提示"
+    requirement_ids: ["REQ-CONTRACT-001"]
+    granularity: "scenario"
+    test_intent:
+      kind: "scenario"
+      polarity: "positive"
+      interface: "ui"
+      field_id: ""
+      input_class: ""
+      expected_outcome: "committed"
+    execution_profile: "contract_flow"
+    execution_contract:
+      capability: "scenario"
+      primary_channel: "ui"
+      setup_separated: true
+    module: "合同签署"
+    priority: "P0"
+    level: "L2"
+    automation_candidate: "high"
+    execution_hint: "适合浏览器端主流程回归"
+    preconditions:
+      - "测试账号已登录且具备合同发起权限"
+      - "存在可发起签署的合同模板 TEMPLATE-A"
+    test_data:
+      - name: "contract_title"
+        value: "AI自动化合同-001"
+        source: "运行时生成，确保唯一"
+      - name: "signer_name"
+        value: "张三"
+        source: "测试数据池"
+    steps:
+      - step_no: 1
+        action: "open_url"
+        target: "/contract/create"
+        input: ""
+        expected_ui_feedback: "打开合同新建页面"
+      - step_no: 2
+        action: "select"
+        target: "模板选择器"
+        input: "TEMPLATE-A"
+        expected_ui_feedback: "模板被选中"
+      - step_no: 3
+        action: "input"
+        target: "合同名称"
+        input: "${contract_title}"
+        expected_ui_feedback: "合同名称输入框显示新值"
+      - step_no: 4
+        action: "input"
+        target: "签署方姓名"
+        input: "${signer_name}"
+        expected_ui_feedback: "签署方姓名输入框显示新值"
+      - step_no: 5
+        action: "click"
+        target: "提交签署按钮"
+        input: ""
+        expected_ui_feedback: "页面出现提交处理中状态或成功提示"
+    formal_steps:
+      - step_no: 1
+        action: "进入合同签署页面并选择 TEMPLATE-A"
+      - step_no: 2
+        action: "填写合同名称和签署方姓名"
+      - step_no: 3
+        action: "提交合同签署"
+    assertions:
+      - assert_id: "A-001"
+        type: "toast"
+        target: "全局提示"
+        expected: "提交成功"
+        severity: "critical"
+    result_contract:
+      verdict: "all"
+      required_produced_keys: ["success_text", "contract_title", "contract_id", "mutation_committed"]
+      assertion_observation_keys: ["success_text", "contract_title", "contract_id", "mutation_committed"]
+      screenshot_required: true
+      observations:
+        - key: "success_text"
+          source: "ui"
+          operator: "contains"
+          expected: "提交成功"
+          evidence_required: true
+        - key: "contract_title"
+          source: "ui"
+          operator: "non_empty"
+          evidence_required: true
+        - key: "contract_id"
+          source: "api"
+          operator: "non_empty"
+          evidence_required: true
+        - key: "mutation_committed"
+          source: "api"
+          operator: "equals"
+          expected: true
+          evidence_required: true
+    cleanup:
+      - "记录生成的合同编号，测试结束后按环境规则归档或删除"

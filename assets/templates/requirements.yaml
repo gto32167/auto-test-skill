@@ -1,0 +1,11 @@
+requirements:
+  - requirement_id: "REQ-001"
+    title: "创建商品"
+    source: "PRD 3.1"
+    disposition: "covered"
+    notes: ""
+
+# disposition 只允许：
+# - covered：必须继续拆测试点
+# - explicitly_not_tested：明确不测，必须写 notes
+# - pending_confirmation：需求待确认，必须写 notes

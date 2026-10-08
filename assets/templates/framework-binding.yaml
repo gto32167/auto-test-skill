@@ -1,0 +1,60 @@
+framework_binding:
+  framework_mode: "builtin_readonly_mirror"
+  framework_root: "E:\\solutions\\ai-qa-prd-workflow\\builtin_framework"
+  runtime_workspace: "{project_dir}\\runtime\\external_framework_runtime"
+  auth_storage_state_path: "{project_dir}\\14_backend_storage_state.json"
+  priority_execution_policy:
+    version: "1.1"
+    order: ["P0", "P1", "P2"]
+    complete_p0_before_lower_priorities: true
+    stop_when_all_p0_failed: true
+    blocked_triggers_stop: false
+    unstarted_status: "not_run"
+    not_run_reason_code: "p0_all_failed_stop_gate"
+  selected_cases:
+    - case_id: "TC-001"
+      priority: "P0"
+      external_test: "tests/test_创建商品.py::Test创建商品::test_创建商品"
+      raw_script: "record_raw/创建商品.py"
+      reuse_existing_script: true
+  runtime_config:
+    browser: "chromium"
+    headless: false
+    slow_mo: 0
+    timeout: 30000
+    base_url: "https://yunstore-dev.xiaokeduo.com"
+    env:
+      username: "18674731640"
+      password: "123456"
+    runtime:
+      test_url_input: "https://yunstore-dev.xiaokeduo.com/#/100000000384/dashboard"
+      dashboard_url: "https://yunstore-dev.xiaokeduo.com/#/100000000384/dashboard"
+      goods_list_url: "https://yunstore-dev.xiaokeduo.com/#/100000000384/goods/onsale"
+      login_url: "https://passportnew-dev.xiaokeduo.com/#/login"
+      auth_storage_state_path: "{project_dir}\\14_backend_storage_state.json"
+      backend_username: "18674731640"
+      backend_password: "123456"
+      business_origin: "https://yunstore-dev.xiaokeduo.com"
+      passport_origin: "https://passportnew-dev.xiaokeduo.com"
+      store_id: "100000000384"
+  outputs:
+    execution_log: "{project_dir}\\runtime\\external_framework_runtime\\framework_run.log"
+    allure_results: "{project_dir}\\runtime\\external_framework_runtime\\allure-results"
+    allure_report: "{project_dir}\\runtime\\external_framework_runtime\\allure-report"
+  # ===== 可选执行项：由可用输入决定是否执行，缺输入则跳过不中断 =====
+  optional_execution_items:
+    code_review:                 # 代码走查：需代码路径或 git 仓库地址
+      enabled: false             # true 或 false；true 但无输入 → 跳过并记录原因
+      code_path: ""              # 如 "E:\\repo\\project"（本地路径）
+      git_url: ""                # 如 "https://github.com/org/repo.git"（仓库地址）
+      git_branch: ""             # 分支，默认 main/master
+      focus_modules: []          # 可选：重点走查模块，如 ["商品创建", "退款"]
+      output: "{project_dir}\\code_review_report.md"
+    api_testing:                 # 接口测试：需接口文档或 API 域名
+      enabled: false
+      api_doc_path: ""           # OpenAPI/Swagger JSON/YAML 或自建接口清单
+      api_doc_url: ""            # 在线 Swagger/OpenAPI 链接
+      api_base_url: ""           # 如 "https://storeapi-dev.xiaokeduo.com"
+      api_req_host: ""           # 可选：Req-Host 头（多租户场景）
+      auth: ""                   # 鉴权方式：token/cookie/sign
+      output: "{project_dir}\\api_testing_report.md"
