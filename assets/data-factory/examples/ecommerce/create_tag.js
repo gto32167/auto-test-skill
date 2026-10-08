@@ -4,8 +4,8 @@
 const fs = require('fs');
 
 const STORAGE = '<项目>/<storage_state>.json';       // 替换：登录态文件
-const API = '<api-domain>/<storeId>';                 // 替换：如 https://storeapi-dev.xiaokeduo.com/100000000384
-const REQ_HOST = '<前端域名>';                         // 替换：如 yunstore-dev.xiaokeduo.com
+const API = '<api-domain>/<storeId>';                 // 替换为当前项目的 API 地址
+const REQ_HOST = '<前端域名>';                         // 替换为当前项目的前端域名
 const HEADERS = buildHeaders();
 
 function buildHeaders() {

@@ -32,7 +32,9 @@ async function get(action, params) {
 
   // 2. 二级分类（常见字段：FirstId + Name + ImgPath）
   const cat2 = '二级分类_' + suffix;
-  const r2 = await post('Product/CreateSecondGroup', { FirstId: <一级分类Id>, Name: cat2, ImgPath: '<图片路径>' });
+  const firstGroupId = process.env.FIRST_GROUP_ID || '<first-group-id>';
+  const imagePath = process.env.IMAGE_PATH || '<image-path>';
+  const r2 = await post('Product/CreateSecondGroup', { FirstId: firstGroupId, Name: cat2, ImgPath: imagePath });
   console.log('CreateSecondGroup:', r2.Code, r2.Msg, cat2);
 
   // 3. 创建标签（注意名称字节长度限制，一般 ≤12 字节，用短名）

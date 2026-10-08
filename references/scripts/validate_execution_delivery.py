@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from execution_readiness import NON_RUN_REASONS, disposition, validate_preflight
-
 import argparse
 import json
 import os
@@ -570,9 +568,6 @@ def validate_xlsx(
         errors.append(f"Xlsx is empty: {path}")
         return {"path": str(path), "rows": 0, "columns": 0}
     headers = rows[0]
-    for header in ("执行级别", "人工介入说明", "人工准备清单"):
-        if header not in headers:
-            errors.append(f"Xlsx must contain execution readiness column {header}: {path}")
     id_column = find_header(headers, {"功能路径", "用例id", "用例编号", "case_id"})
     if id_column is None:
         errors.append(f"Xlsx has no case ID column: {path}")
@@ -584,9 +579,6 @@ def validate_xlsx(
     if len(data_rows) != len(case_ids):
         errors.append(f"Xlsx data rows ({len(data_rows)}) must equal case count ({len(case_ids)}): {path}")
     if backfill:
-        for header in ("原因说明（给测试人员）", "建议下一步", "技术原因（给Agent）"):
-            if header not in headers:
-                errors.append(f"Backfill xlsx must contain tester explanation column {header}: {path}")
         status_column = find_header(headers, {"执行状态", "状态", "status"})
         actual_column = find_header(headers, {"执行结果", "实际结果", "actual_result"})
         if status_column is None or actual_column is None:
@@ -597,10 +589,6 @@ def validate_xlsx(
                 status = text(row[status_column]) if status_column < len(row) else ""
                 actual = text(row[actual_column]) if actual_column < len(row) else ""
                 normalized_status = normalize_execution_status(status)
-                reason_column = find_header(headers, {"原因说明（给测试人员）"})
-                if normalized_status in {"failed", "blocked", "not_run"} and reason_column is not None:
-                    if reason_column >= len(row) or not text(row[reason_column]):
-                        errors.append(f"Backfill xlsx row {row_number} must explain the reason to testers")
                 if normalized_status not in {"passed", "failed", "blocked", "not_run"}:
                     errors.append(f"Backfill xlsx row {row_number} has invalid status: {status or '<blank>'}")
                 elif expected_statuses is not None and normalized_status != expected_statuses.get(row_case_id):
@@ -754,7 +742,6 @@ def main() -> int:
     if text(execution_meta.get("retry_policy_version")) != "3.0":
         errors.append("execution_meta.retry_policy_version must be 3.0")
     plan_meta = plan_doc.get("execution_meta") or {}
-    errors.extend(validate_preflight(cases, plans, plan_meta))
     execution_mode = text(execution_meta.get("execution_mode")).lower()
     if execution_mode != text(plan_meta.get("execution_mode")).lower():
         errors.append("execution_meta.execution_mode must match the gated execution plan")
@@ -829,17 +816,6 @@ def main() -> int:
         expected_semantic_hash = semantic_contract_hash(case) if case else ""
         if text(item.get("semantic_contract_sha256")) != expected_semantic_hash:
             errors.append(f"Case {case_id} result has a stale or missing semantic contract hash")
-        route = disposition(plan)
-        if route == "run" and text(item.get("not_run_reason")) in NON_RUN_REASONS.values():
-            errors.append(f"Case {case_id} cannot claim human transfer/skip without the gated preflight decision")
-        if route in NON_RUN_REASONS:
-            if status != "not_run" or text(item.get("not_run_reason")) != NON_RUN_REASONS[route]:
-                errors.append(f"Case {case_id} preflight {route} must remain not_run/{NON_RUN_REASONS[route]}")
-            if item.get("attempts") or item.get("evidence") or item.get("produced_data") or item.get("execution_trace"):
-                errors.append(f"Case {case_id} preflight {route} must not fabricate execution/evidence/business data")
-            if text(item.get("stability")) != "not_run":
-                errors.append(f"Case {case_id} preflight {route} stability must be not_run")
-            continue
         if not plan:
             errors.append(f"Case {case_id} has no gated execution plan item")
         raw_attempts = as_list(item.get("attempts"))
@@ -1077,8 +1053,6 @@ def main() -> int:
         case_id = text(case.get("case_id"))
         priority = text(case.get("priority")).upper()
         result = results_by_id.get(case_id) or {}
-        if disposition(plans_by_id.get(case_id) or {}) in NON_RUN_REASONS:
-            continue
         status = normalize_execution_status(result.get("status"))
         attempts = [attempt for attempt in as_list(result.get("attempts")) if isinstance(attempt, dict)]
         if priority == "P0" and status not in {"passed", "failed", "blocked"}:

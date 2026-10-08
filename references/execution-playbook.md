@@ -42,13 +42,13 @@
 
 - **错误做法（踩过的坑）**：默认 `headless: true` 点登录 → 阿里无感验证识别无头环境为机器、不自动通过 → 误判"必须人工点验证码" → 把登录推给用户
 - **正确做法**：`chromium.launchPersistentContext(userDataDir, { headless: false, channel: 'chrome', args: ['--disable-blink-features=AutomationControlled'] })` + `addInitScript` 隐藏 `navigator.webdriver` → 填账号密码点登录 → 轮询 token/URL 检测登录成功 → `context.storageState()` 保存
-- **判断登录成功的标准（脚本自动轮询，不要靠人）**：`context.cookies()` 出现 `/token|dev_token|fat_token|store_token/i` 匹配的 cookie，或 URL 进入业务域（如 `yunstore-dev.xiaokeduo.com` / `mchcenter-dev.xiaokeduo.com`）
-- **passport 登录 API（销客多，已实测 2026-08-24）**：
-  - API 域：`https://passportapi-dev.xiaokeduo.com/api/Login`（不是 passportnew-dev 前端域）
-  - 请求必须带 `Req-Host: yunstore-dev.xiaokeduo.com`，否则 `30010 bad request need req-host header`
+- **判断登录成功的标准（脚本自动轮询，不要靠人）**：`context.cookies()` 出现 `/token|dev_token|fat_token|store_token/i` 匹配的 cookie，或 URL 进入当前项目配置的业务域。
+- **登录 API（项目相关示例）**：
+  - API 域、登录路径和前端 `Req-Host` 必须从当前项目背景或探测结果读取，不能复制其他项目的地址。
+  - 如果服务要求 `Req-Host`，请求必须使用当前项目的业务域；缺少或写错时，应记录真实响应并标记环境/鉴权问题。
   - `AliCheckLoginNew(TelPhone, Password, AliCode, ReturnUrl, ...)`：密码+阿里验证码，AliCode 非法返回 30002
   - `NewLogin(TelPhone, Password, Session, Sig, Token, Scene, ReturnUrl)`：密码+阿里无感参数
-  - `VerificationCode(TelPhone, SmsCode, ReturnUrl)`：短信验证码登录，**不需要阿里参数**；dev 固定验证码 `82d1f6`，但需先调 `SendSmsCode`（要阿里参数）激活，否则报 50002 验证码已失效
+  - `VerificationCode(TelPhone, SmsCode, ReturnUrl)`：短信验证码登录的参数和有效期以当前项目为准；验证码必须运行时注入，不能写死在模板或仓库中。
   - `SendSmsCode(TelPhone, Session, Sig, Token, Scene)`：发短信，阿里参数为空时 30003 阿里滑块校验不通过
   - 后端异常会通过 `Code:500 + Msg: NullReferenceException` 暴露方法签名 → 从堆栈直接拿参数名（这是盲试参数的捷径）
 - **登录流程判断原则**：遇到登录/风控问题，先自己按上面步骤尝试（有头真实 Chrome → 轮询检测），**不要第一时间假设必须人工介入**；确认真实 chrome 也无法自动过时，再提示用户手动配合一次并自动接管后续

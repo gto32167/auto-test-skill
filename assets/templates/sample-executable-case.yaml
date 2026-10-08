@@ -28,11 +28,6 @@ test_cases:
     module: "合同签署"
     priority: "P0"
     level: "L2"
-    execution_readiness:
-      level: "auto" # auto / assisted / manual; business priority remains P0/P1/P2
-      reason: ""
-      human_actions: []
-      preparations: []
     automation_candidate: "high"
     execution_hint: "适合浏览器端主流程回归"
     preconditions:

@@ -95,7 +95,6 @@ def normalize_execution_status(value: Any) -> str:
 
 
 def case_rows_from_yaml(source_path: Path) -> list[dict[str, str]]:
-    from execution_readiness import readiness_columns
     document = load_yaml(source_path)
     cases = list_from(document, ("test_cases",), "test_cases")
     rows: list[dict[str, str]] = []
@@ -144,7 +143,6 @@ def case_rows_from_yaml(source_path: Path) -> list[dict[str, str]]:
                 "前置条件": preconditions,
                 "执行步骤": "；".join(step_parts),
                 "预期结果": formal_expected,
-                **readiness_columns(case),
             }
         )
     return rows

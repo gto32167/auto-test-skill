@@ -12,14 +12,14 @@
 | 业务实体：商品/分类/标签/订单 | create_product.js / create_group.js / create_tag.js / place_order.js |
 | 造数端点：`Product/CreateProduct`（storeapi） | create_product.js 内部调用 |
 | 鉴权：Bearer + Req-Host（缺 Req-Host 返 30010） | auth_template.js 统一封装 |
-| 账号：18674731640 / dev 验证码 82d1f6 | 登录态 storage_state + H5 下单 |
+| 项目账号和验证码 | 运行时注入的登录态 storage_state + H5 下单 |
 | 商品创建真实参数：goodsUse/picture.imageUrl/total_stock/delivery 数组 | create_product.js body 构造 |
 
 ## 关键实测坑（已沉淀到 execution-playbook.md）
 
-- 商品创建必须 `goodsUse:[1]` + `picture:[{imageUrl}]` + `total_stock`，缺报 30902/30002
+- 商品创建字段必须以当前项目的真实接口响应和背景文档为准，不能直接复制示例参数
 - H5 支付密码为虚拟键盘（.secret-box + .keyboard-item 逐键点击），非 input
-- dev 短信验证码固定 82d1f6
+- 验证码、支付密码和登录态只允许在运行时注入，不写入示例或 Git 历史
 
 ## 换系统时怎么改
 

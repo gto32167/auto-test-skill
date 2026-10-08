@@ -1,29 +1,18 @@
 from __future__ import annotations
 
 import argparse
-from copy import deepcopy
 import shutil
-import time
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from workflow_gate_common import case_rows_from_yaml, verify_passed_gate
-from execution_readiness import CASE_HEADERS
 
 
 NS = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 REL_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PKG_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 ET.register_namespace("", NS["x"])
-
-
-def column_name(index: int) -> str:
-    name = ""
-    while index:
-        index, remainder = divmod(index - 1, 26)
-        name = chr(65 + remainder) + name
-    return name
 
 
 def source_rows(path: Path) -> list[dict[str, str]]:
@@ -64,15 +53,7 @@ def replace_zip_entry(zip_path: Path, member: str, payload: bytes) -> None:
                 continue
             target.writestr(item, source.read(item.filename))
         target.writestr(member, payload)
-    # Windows can briefly keep a newly written workbook open for scanning.
-    for attempt in range(4):
-        try:
-            temporary_path.replace(zip_path)
-            break
-        except PermissionError:
-            if attempt == 3:
-                raise
-            time.sleep(0.1 * (2 ** attempt))
+    temporary_path.replace(zip_path)
 
 
 def create_default_workbook(path: Path) -> None:
@@ -125,35 +106,9 @@ def create_default_workbook(path: Path) -> None:
         zip_file.writestr("xl/worksheets/sheet1.xml", worksheet.encode("utf-8"))
 
 
-def add_readiness_styles(path: Path) -> dict[str, str]:
-    """Append highlight styles to default or user-supplied workbook styles."""
-    with zipfile.ZipFile(path) as archive:
-        root = ET.fromstring(archive.read("xl/styles.xml"))
-    fills = root.find("x:fills", NS)
-    styles = root.find("x:cellXfs", NS)
-    if fills is None or styles is None or not len(styles):
-        raise ValueError("Workbook styles must contain fills and cellXfs")
-    result = {}
-    base = styles[min(6, len(styles) - 1)]
-    for label, color in (("必须人工执行", "FFF8CBAD"), ("人工准备后自动执行", "FFFFF2CC")):
-        fill = ET.SubElement(fills, f"{{{NS['x']}}}fill")
-        pattern = ET.SubElement(fill, f"{{{NS['x']}}}patternFill", patternType="solid")
-        ET.SubElement(pattern, f"{{{NS['x']}}}fgColor", rgb=color)
-        ET.SubElement(pattern, f"{{{NS['x']}}}bgColor", indexed="64")
-        style = deepcopy(base)
-        style.set("fillId", str(len(fills) - 1))
-        style.set("applyFill", "1")
-        result[label] = str(len(styles))
-        styles.append(style)
-    fills.set("count", str(len(fills)))
-    styles.set("count", str(len(styles)))
-    replace_zip_entry(path, "xl/styles.xml", ET.tostring(root, encoding="utf-8", xml_declaration=True))
-    return result
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate the testcase xlsx from a gated final-case source.")
-    parser.add_argument("--template", help="Optional user-provided xlsx template; includes human readiness columns")
+    parser.add_argument("--template", help="Optional user-provided xlsx template; omit to use the default seven-column template")
     parser.add_argument("--source", required=True, help="Gated 06_final_test_cases.yaml")
     parser.add_argument("--case-gate", required=True)
     parser.add_argument("--output", required=True)
@@ -172,9 +127,8 @@ def main() -> None:
         shutil.copyfile(Path(args.template).resolve(), output_path)
     else:
         create_default_workbook(output_path)
-    readiness_styles = add_readiness_styles(output_path)
 
-    headers = CASE_HEADERS
+    headers = ["用例ID", "功能集合", "用例名称", "优先级", "前置条件", "执行步骤", "预期结果"]
     values = [[row.get(header, "") for header in headers] for row in rows]
 
     with zipfile.ZipFile(output_path, "r") as zip_file:
@@ -193,9 +147,8 @@ def main() -> None:
     sheet_data.append(header_row)
     for row_number, row_values in enumerate(values, 2):
         row_element = ET.Element(f"{{{NS['x']}}}row", r=str(row_number), ht="34.5", customHeight="1", spans=f"1:{len(headers)}")
-        for column, header, value in zip(columns, headers, row_values):
-            style = readiness_styles.get(value, "6") if header == "执行级别" else ("5" if column == "A" else "6")
-            row_element.append(inline_cell(f"{column}{row_number}", style, value))
+        for column, value in zip(columns, row_values):
+            row_element.append(inline_cell(f"{column}{row_number}", "5" if column == "A" else "6", value))
         sheet_data.append(row_element)
 
     last_row = len(values) + 1

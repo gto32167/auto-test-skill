@@ -11,7 +11,6 @@ from datetime import datetime
 
 from common.environment_manager import EnvironmentManager, print_environment_report
 from common.script_parser import ScriptParser
-from common.execution_preflight import filter_targets, prepared_nodes
 
 
 class TestRunner:
@@ -104,16 +103,6 @@ class TestRunner:
     ):
         pytest_started_at = datetime.now()
         pytest_started_perf = time.perf_counter()
-        targets = self._normalize_targets(test_path=test_path, selected_tests=selected_tests)
-        nodes = prepared_nodes(self.project_root)
-        if nodes is not None:
-            # Resolve file/directory selections to explicit approved nodes so a
-            # broad pytest target cannot accidentally run manual cases.
-            relative_targets = [str(Path(target).relative_to(self.project_root)) if Path(target).is_absolute() and Path(target).is_relative_to(self.project_root) else target for target in targets]
-            targets = filter_targets(relative_targets, nodes)
-            if not targets:
-                result = {"success": True, "returncode": 0, "targets": [], "command": [], "per_test_results": [], "stdout": "本轮没有可自动执行的用例；人工执行/跳过安排已保留。", "stderr": ""}
-                return result if return_details else True
         self.clean_results()
         
         test_files = list(self.tests_dir.glob("test_*.py"))
@@ -132,6 +121,7 @@ class TestRunner:
                 return empty_result
             return False
 
+        targets = self._normalize_targets(test_path=test_path, selected_tests=selected_tests)
         env = self._build_env(headless=headless, browser=browser, slow_mo=slow_mo)
         configured_browser = env["TEST_BROWSER"]
 

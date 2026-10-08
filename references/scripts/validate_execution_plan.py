@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from execution_readiness import disposition, validate_preflight, write_preflight_report
-
 import argparse
 import json
 import sys
@@ -47,7 +45,6 @@ def main() -> int:
     parser.add_argument("--final-cases", required=True)
     parser.add_argument("--execution-plan", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--preflight-report", help="执行前人工准备清单；默认与门禁文件同目录")
     args = parser.parse_args()
 
     case_gate_path = Path(args.case_gate).resolve()
@@ -111,10 +108,6 @@ def main() -> int:
                 errors.append(f"execution plan resource_budget.{field} must be a non-negative number")
 
     case_ids = [text(case.get("case_id")) for case in cases]
-    preflight_errors = validate_preflight(cases, plans, plan_meta)
-    errors.extend(preflight_errors)
-    preflight_path = Path(args.preflight_report).resolve() if args.preflight_report else output_path.with_name("10_执行前人工准备清单.md")
-    write_preflight_report(preflight_path, cases, plans, preflight_errors)
     plan_ids = [text(item.get("case_id")) for item in plans]
     if len(plan_ids) != len(set(plan_ids)):
         errors.append("Execution plan case IDs must not contain duplicates")
@@ -142,9 +135,6 @@ def main() -> int:
         semantic_hashes[case_id] = expected_hash
         if text(item.get("semantic_contract_sha256")) != expected_hash:
             errors.append(f"Case {case_id} execution plan has a stale or missing semantic contract hash")
-        if disposition(item) in {"manual", "skip"}:
-            minimum_attempts_by_case[case_id] = 0
-            continue
 
         expected_execution = normalized_execution_contract(case)
         expected_intent = normalized_test_intent(case)
@@ -368,8 +358,6 @@ def main() -> int:
         "gate": "execution_plan",
         "status": "fail" if errors else "pass",
         "contract_version": "2.0",
-        "readiness_version": "1.0",
-        "preflight_report": source_record(preflight_path),
         "inputs": {
             "case_gate": source_record(case_gate_path),
             "final_cases": source_record(final_case_path),

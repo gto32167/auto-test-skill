@@ -1,18 +1,18 @@
 allure:
   enabled: true
   path: allure
-base_url: https://yunstore-dev.xiaokeduo.com
+base_url: ""
 browser: chromium
 env:
-  password: '123456'
-  username: '18674731640'
+  password: ""
+  username: ""
 environment:
   auto_install_missing: true
   ensure_playwright_browser: true
   sync_exact_versions: false
 headless: false
 login:
-  url: https://passportnew-dev.xiaokeduo.com/#/login
+  url: ""
 paths:
   allure_report: allure-report
   allure_results: allure-results
@@ -21,29 +21,23 @@ paths:
   test_data: test_data
   tests: tests
 runtime:
-  backend_password: '123456'
-  backend_username: '18674731640'
-  business_origin: https://yunstore-dev.xiaokeduo.com
-  dashboard_url: https://yunstore-dev.xiaokeduo.com/#/100000000384/goods/onsale
-  goods_list_url: https://yunstore-dev.xiaokeduo.com/#/100000000384/goods/onsale
-  h5_accounts:
-  - pay_password: '111111'
-    phone: '18674731640'
-    verification_code: 82d1f6
-  h5_default_phone: '18674731640'
-  h5_phones:
-  - '18674731640'
-  h5_verification_code: 82d1f6
-  login_url: https://passportnew-dev.xiaokeduo.com/#/login
-  passport_origin: https://passportnew-dev.xiaokeduo.com
-  pay_password: '111111'
-  store_id: '100000000384'
-  test_url_input: https://yunstore-dev.xiaokeduo.com/#/100000000384/goods/onsale
+  backend_password: ""
+  backend_username: ""
+  business_origin: ""
+  dashboard_url: ""
+  goods_list_url: ""
+  h5_accounts: []
+  h5_default_phone: ""
+  h5_phones: []
+  h5_verification_code: ""
+  login_url: ""
+  passport_origin: ""
+  pay_password: ""
+  store_id: ""
+  test_url_input: ""
 slow_mo: 0
 timeout: 30000
-url_mappings:
-  https://passportnew-dev.xiaokeduo.com: https://passportnew-dev.xiaokeduo.com
-  https://yunstore-dev.xiaokeduo.com: https://yunstore-dev.xiaokeduo.com
+url_mappings: {}
 viewport:
   height: 1080
   width: 1920

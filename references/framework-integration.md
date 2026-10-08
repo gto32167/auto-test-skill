@@ -1,7 +1,5 @@
 # 执行框架接入
 
-PRD 工作流正式执行前设置 `AI_QA_WORKFLOW_DIR` 指向本轮产物目录。内置 runner 和直接 pytest 都在测试运行前核对执行前人工准备、设计门禁和计划门禁的输入哈希，并把文件/目录选择缩减为允许 `run` 的明确测试节点；人工执行与人工跳过的节点不进入执行。映射默认读取产物目录的 `case_execution_mapping.yaml`，可用 `AI_QA_CASE_MAPPING` 指定；复制框架后设置 `AI_QA_SKILL_ROOT` 指向技能目录。清单字段、确认规则及旧用例迁移见 [human-readiness.md](human-readiness.md)。工作流禁止利用无产物的旧脚本模式绕过准备检查。
-
 ## 1. 定位
 
 本文只说明如何把内置框架或已有自动化资产接入项目运行目录。执行顺序、重试、三态判定和证据规则由 `browser-execution.md` 维护；选择器、登录和弹窗排障由 `execution-playbook.md` 维护。

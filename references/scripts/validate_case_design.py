@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from execution_readiness import validate_case_readiness
-
 import argparse
 import math
 import re
@@ -556,7 +554,6 @@ def main() -> int:
     final_case_point_ids: list[str] = []
     case_feature_groups: list[str] = []
     for case, case_id in zip(cases, case_ids):
-        errors.extend(validate_case_readiness(case))
         point_values = [text(value) for value in as_list(case.get("test_point_id") or case.get("test_point_ids")) if text(value)]
         if len(point_values) != 1:
             errors.append(f"Case {case_id or '<missing>'} must reference exactly one test_point_id")

@@ -1,0 +1,33 @@
+# Local secrets and project-specific runtime configuration
+.env
+.env.*
+!.env.example
+*.local.yaml
+*.local.yml
+runtime/
+artifacts/
+14_backend_storage_state.json
+**/*storage_state*.json
+
+# Generated test output and caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+allure-results/
+allure-report/
+
+# Generated project inputs and delivery files
+*.log
+*.tmp
+*.bak
+
+# Editor and operating-system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+

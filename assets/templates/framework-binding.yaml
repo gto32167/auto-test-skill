@@ -1,6 +1,6 @@
 framework_binding:
   framework_mode: "builtin_readonly_mirror"
-  framework_root: "E:\\solutions\\ai-qa-prd-workflow\\builtin_framework"
+  framework_root: "<framework-root>\\builtin_framework"
   runtime_workspace: "{project_dir}\\runtime\\external_framework_runtime"
   auth_storage_state_path: "{project_dir}\\14_backend_storage_state.json"
   priority_execution_policy:
@@ -14,29 +14,30 @@ framework_binding:
   selected_cases:
     - case_id: "TC-001"
       priority: "P0"
-      external_test: "tests/test_创建商品.py::Test创建商品::test_创建商品"
-      raw_script: "record_raw/创建商品.py"
+      external_test: "tests/test_example.py::TestExample::test_example"
+      raw_script: "record_raw/example.py"
       reuse_existing_script: true
+  # Fill project-specific values in a local copy; never commit credentials.
   runtime_config:
     browser: "chromium"
     headless: false
     slow_mo: 0
     timeout: 30000
-    base_url: "https://yunstore-dev.xiaokeduo.com"
+    base_url: "<business-origin>"
     env:
-      username: "18674731640"
-      password: "123456"
+      username: "<test-username>"
+      password: "<test-password>"
     runtime:
-      test_url_input: "https://yunstore-dev.xiaokeduo.com/#/100000000384/dashboard"
-      dashboard_url: "https://yunstore-dev.xiaokeduo.com/#/100000000384/dashboard"
-      goods_list_url: "https://yunstore-dev.xiaokeduo.com/#/100000000384/goods/onsale"
-      login_url: "https://passportnew-dev.xiaokeduo.com/#/login"
+      test_url_input: "<business-entry-url>"
+      dashboard_url: "<dashboard-url>"
+      goods_list_url: "<list-url>"
+      login_url: "<login-url>"
       auth_storage_state_path: "{project_dir}\\14_backend_storage_state.json"
-      backend_username: "18674731640"
-      backend_password: "123456"
-      business_origin: "https://yunstore-dev.xiaokeduo.com"
-      passport_origin: "https://passportnew-dev.xiaokeduo.com"
-      store_id: "100000000384"
+      backend_username: "<test-username>"
+      backend_password: "<test-password>"
+      business_origin: "<business-origin>"
+      passport_origin: "<passport-origin>"
+      store_id: "<store-id>"
   outputs:
     execution_log: "{project_dir}\\runtime\\external_framework_runtime\\framework_run.log"
     allure_results: "{project_dir}\\runtime\\external_framework_runtime\\allure-results"
@@ -54,7 +55,7 @@ framework_binding:
       enabled: false
       api_doc_path: ""           # OpenAPI/Swagger JSON/YAML 或自建接口清单
       api_doc_url: ""            # 在线 Swagger/OpenAPI 链接
-      api_base_url: ""           # 如 "https://storeapi-dev.xiaokeduo.com"
+      api_base_url: ""           # 如 "https://api.example.test"
       api_req_host: ""           # 可选：Req-Host 头（多租户场景）
       auth: ""                   # 鉴权方式：token/cookie/sign
       output: "{project_dir}\\api_testing_report.md"

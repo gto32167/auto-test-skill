@@ -16,7 +16,6 @@ from workflow_gate_common import (
     verify_passed_gate,
 )
 from execution_quality import execution_metrics
-from result_explanation import explain_result
 from word_report import write_docx_from_markdown
 
 
@@ -132,7 +131,7 @@ def main() -> None:
             # 版为准。
             unstable_rows.append([case_id, text(case.get("priority")), " / ".join(text(item.get("status")) for item in result.get("attempts") or []), "详见执行回填版的实际执行结果、失败原因和阻塞说明"])
         if status == "failed":
-            conclusion = explain_result(result, text(case.get("formal_expected_result")))[0]
+            conclusion = text(result.get("defect_summary") or result.get("blocker_reason") or result.get("not_run_reason") or actual)
             defect = result.get("defect") or {}
             defect_rows.append(
                 [
@@ -191,7 +190,7 @@ def main() -> None:
         if normalize_execution_status(result.get("status")) == "not_run"
     )
     not_run_reason_text = "；".join(
-        f"{ {'manual_execution_required': '交给人工执行', 'human_preflight_skip': '人工在执行前决定跳过', 'p0_all_failed_stop_gate': '核心用例全部失败后停止', 'script_status_missing': '缺少执行记录'}.get(reason, reason or '未说明')}:{count}条" for reason, count in sorted(not_run_reasons.items())
+        f"{reason or '未说明'}:{count}条" for reason, count in sorted(not_run_reasons.items())
     ) or "无"
     lines = [
         "# 正式测试报告",
@@ -215,7 +214,6 @@ def main() -> None:
         f"- 失败：{counts['failed']}",
         f"- 阻塞：{counts['blocked']}",
         f"- 未执行：{counts['not_run']}",
-        f"- 其中交给人工执行：{not_run_reasons['manual_execution_required']}；人工在执行前决定跳过：{not_run_reasons['human_preflight_skip']}",
         f"- 含阻塞通过率：{metrics['final_pass_rate_including_blocked']:.2f}%",
         f"- 已判定项通过率：{metrics['final_pass_rate_judged_only']:.2f}%",
         f"- 总体结论：{overall}",

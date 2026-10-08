@@ -78,13 +78,7 @@ def evaluate_p0_stop_gate(
     ]
     p0_statuses = [_status((result_by_id.get(case_id) or {}).get("status")) for case_id in p0_ids]
     completed_statuses = {"passed", "failed", "blocked"}
-    p0_completed = sum(
-        status in completed_statuses or (
-            status == "not_run" and (result_by_id.get(case_id) or {}).get("not_run_reason")
-            in {"manual_execution_required", "human_preflight_skip"}
-        )
-        for case_id, status in zip(p0_ids, p0_statuses)
-    )
+    p0_completed = sum(status in completed_statuses for status in p0_statuses)
     p0_failed = sum(status == "failed" for status in p0_statuses)
     p0_blocked = sum(status == "blocked" for status in p0_statuses)
     triggered = (

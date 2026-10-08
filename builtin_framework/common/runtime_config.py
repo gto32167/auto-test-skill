@@ -5,8 +5,8 @@ from urllib.parse import urlsplit
 from common.config_manager import ConfigManager
 
 
-DEFAULT_PASSPORT_ORIGIN = "https://passportnew-dev.xiaokeduo.com"
-DEFAULT_BUSINESS_ORIGIN = "https://yunstore-dev.xiaokeduo.com"
+DEFAULT_PASSPORT_ORIGIN = ""
+DEFAULT_BUSINESS_ORIGIN = ""
 
 
 def parse_h5_account_entries(raw_value, default_pay_password="", default_verification_code=""):

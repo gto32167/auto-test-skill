@@ -598,7 +598,8 @@ class Test{test_case['name'].title().replace("_", "")}:
 
         if is_login_case:
             content += "\n        with allure.step(\"Verify logged in session\"):\n"
-            content += "            assert \"passportnew-dev.xiaokeduo.com/#/login\" not in page.url, \"登录后仍停留在登录页\"\n"
+            content += "            login_url = config.get(\"login.url\", \"\")\n"
+            content += "            assert not login_url or not page.url.startswith(login_url), \"登录后仍停留在登录页\"\n"
             content += "            assert page.locator(\"body\").count() == 1\n"
             return content
 

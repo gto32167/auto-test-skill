@@ -27,26 +27,11 @@ from common.runtime_config import (
     merge_runtime_parameters,
 )
 from common.url_utils import resolve_target_url
-from common.execution_preflight import normalize_node, prepared_nodes
 
 
-def pytest_collection_modifyitems(config, items):
-    try:
-        nodes = prepared_nodes(Path(__file__).resolve().parent)
-    except (OSError, ValueError) as exc:
-        raise pytest.UsageError(str(exc)) from exc
-    if nodes is None:
-        return
-    allowed = set(nodes)
-    selected = [item for item in items if normalize_node(item.nodeid) in allowed]
-    deselected = [item for item in items if normalize_node(item.nodeid) not in allowed]
-    config.hook.pytest_deselected(items=deselected)
-    items[:] = sorted(selected, key=lambda item: nodes.index(normalize_node(item.nodeid)))
-
-
-DEFAULT_LOGIN_URL = "https://passportnew-dev.xiaokeduo.com/#/login"
-DEFAULT_USERNAME = "18674731640"
-DEFAULT_PASSWORD = "123456"
+DEFAULT_LOGIN_URL = ""
+DEFAULT_USERNAME = ""
+DEFAULT_PASSWORD = ""
 DEFAULT_AUTH_STATE_PATH = Path(__file__).resolve().parent / "artifacts" / "auth" / "backend_storage_state.json"
 STORE_ENTRY_SELECTOR = (
     "div:nth-child(7) > "
@@ -225,11 +210,10 @@ def _wait_for_post_login_redirect(page, timeout_ms=20000):
     while time.time() < deadline:
         _wait_ready(page, pause_ms=1000)
         last_url = page.url
-        if "passportnew-dev" not in last_url:
+        body_text = page.locator("body").inner_text()
+        if "请输入注册时填写的手机号" not in body_text:
             return last_url
-        if "请输入注册时填写的手机号" not in page.locator("body").inner_text():
-            return last_url
-        if "登录" not in page.locator("body").inner_text():
+        if "登录" not in body_text:
             return last_url
     return last_url
 
@@ -257,6 +241,10 @@ def _perform_login(page, config):
         )
         or login_url
     )
+    if not bootstrap_url:
+        raise AssertionError(
+            "缺少项目运行配置：请提供 login.url/TEST_LOGIN_URL 或 runtime.test_url_input"
+        )
 
     if bearer_token:
         with allure.step("Session bootstrap with bearer token"):
@@ -292,7 +280,7 @@ def _perform_login(page, config):
                 note_execution_step("共享登录：已进入后台目标页面", function_name="_perform_login")
                 break
 
-            if "passportnew-dev" in page.url:
+            if _is_login_origin(page.url, config):
                 note_execution_step("共享登录：命中登录页，准备提交登录表单", function_name="_perform_login")
                 _fill_backend_login_form(page, username, password)
                 last_url = page.url
@@ -305,15 +293,6 @@ def _perform_login(page, config):
                 note_execution_step("共享登录：登录后已进入后台目标页面", function_name="_perform_login")
                 break
 
-            if "mchcenter-dev.xiaokeduo.com" in page.url:
-                note_execution_step("共享登录：落在商户中心，重新跳转后台目标页", function_name="_perform_login")
-                page.goto(bootstrap_url, wait_until="domcontentloaded")
-                _wait_ready(page, pause_ms=5000)
-                last_url = page.url
-
-                if _is_store_backend_url(page.url, base_url, store_id):
-                    note_execution_step("共享登录：从商户中心跳回后台成功", function_name="_perform_login")
-                    break
         else:
             raise AssertionError(f"共享登录后未进入目标后台页面: {last_url}")
 
@@ -339,6 +318,14 @@ def _origin_of(url):
     if not parsed.scheme or not parsed.netloc:
         return ""
     return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def _is_login_origin(url, config):
+    configured_login_url = os.getenv("TEST_LOGIN_URL") or str(
+        get_runtime_settings(config).get("login_url") or ""
+    ).strip()
+    configured_origin = _origin_of(configured_login_url)
+    return bool(configured_origin and _origin_of(url) == configured_origin)
 
 
 def _should_bypass_shared_login(config):
@@ -453,7 +440,7 @@ def _ensure_backend_session_for_raw_script(page, config, *login_args, **login_kw
         if base_url and store_id and _is_store_backend_url(page.url, base_url, store_id):
             break
 
-        if "passportnew-dev" in page.url:
+        if _is_login_origin(page.url, config):
             note_execution_step("raw 脚本共享登录校验：补做后台登录", function_name="_ensure_backend_session_for_raw_script")
             _fill_backend_login_form(page, username, password)
             last_url = page.url
@@ -465,12 +452,6 @@ def _ensure_backend_session_for_raw_script(page, config, *login_args, **login_kw
         if base_url and store_id and _is_store_backend_url(page.url, base_url, store_id):
             break
 
-        if "mchcenter-dev.xiaokeduo.com" in page.url and target_url:
-            page.goto(target_url, wait_until="domcontentloaded")
-            _wait_ready(page, pause_ms=5000)
-            last_url = page.url
-            if base_url and store_id and _is_store_backend_url(page.url, base_url, store_id):
-                break
     else:
         raise AssertionError(f"共享登录后未进入目标后台页面: {last_url}")
 
@@ -612,22 +593,25 @@ def context(browser, config):
         context_kwargs["extra_http_headers"] = {"Authorization": bearer_token}
     context = browser.new_context(**context_kwargs)
     if bearer_token:
-        try:
-            context.add_cookies(
-                [
-                    {
-                        "name": "fat_token",
-                        "value": bearer_token,
-                        "domain": ".xiaokeduo.com",
-                        "path": "/",
-                        "httpOnly": False,
-                        "secure": False,
-                        "sameSite": "Lax",
-                    }
-                ]
-            )
-        except Exception:
-            pass
+        business_origin = str(get_runtime_settings(config).get("business_origin") or "").strip()
+        cookie_domain = urlsplit(business_origin).hostname
+        if cookie_domain:
+            try:
+                context.add_cookies(
+                    [
+                        {
+                            "name": "fat_token",
+                            "value": bearer_token,
+                            "domain": cookie_domain,
+                            "path": "/",
+                            "httpOnly": False,
+                            "secure": False,
+                            "sameSite": "Lax",
+                        }
+                    ]
+                )
+            except Exception:
+                pass
     yield context
     if not _get_env_bool("TEST_KEEP_BROWSER_OPEN", True):
         context.close()

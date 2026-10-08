@@ -8,9 +8,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from workflow_gate_common import case_rows_from_yaml, load_yaml, text, verify_passed_gate
-from execution_readiness import CASE_HEADERS
-from result_explanation import explain_result
-from generate_case_xlsx import add_readiness_styles, column_name, replace_zip_entry
 
 
 # These fields are execution/audit plumbing rather than reviewer-facing business data.
@@ -68,11 +65,11 @@ def _stage_and_resolution(reason: str) -> tuple[str, str]:
     if "input[type=file]" in reason or "文件上传控件" in reason or "set_input_files" in reason:
         return "文件上传控件定位", "等待上传控件挂载或修复上传控件定位后重新执行"
     if "radio" in reason or "cannot be filled" in reason:
-        return "表单控件操作", "修正控件定位和操作方式后重新执行"
+        return "收货地址弹窗搜索框定位", "使用排除 radio/checkbox 的搜索框定位后重新执行"
     if "缺少" in reason or "前置数据" in reason:
-        return "测试数据或配置准备", "按本用例准备清单补齐数据、权限或配置并验收后重新执行"
+        return "业务测试数据准备", "在环境中准备该规则所需商品、活动、订单或权限配置后重新执行"
     if any(marker in reason for marker in ("超过100", "200单", "异步", "2000行", "1000行", "大数据量")):
-        return "大数据量准备与加载", "准备可审计的测试数据并确认加载完成后重新执行"
+        return "大数据量文件上传与订单列表解析", "准备可审计的有效订单批次并确认服务器能够形成订单列表后重新执行"
     return "执行前置或页面操作", "补齐上述条件并重新执行"
 
 
@@ -133,17 +130,17 @@ def format_human_result(item: dict, row: dict[str, str]) -> tuple[str, str, str]
         summary = {}
     raw_actual = text(item.get("actual_result"))
     reason = text(item.get("blocker_reason") or item.get("not_run_reason"))
-    if status == "not_run":
-        human_reason, next_action = explain_result(item)
-        return human_reason, "", f"{human_reason} 后续处理：{next_action}"
     if status == "blocked":
         clean_reason = _strip_machine_prefix(reason or raw_actual)
-        stage, _ = _stage_and_resolution(clean_reason)
+        stage, resolution = _stage_and_resolution(clean_reason)
         attempts = item.get("attempts") or []
-        progress = "已有执行尝试记录，具体完成的动作以执行轨迹和截图为准" if attempts else "尚无核心业务操作的执行记录"
+        if attempts:
+            progress = "已完成登录并进入批量下单流程"
+        else:
+            progress = "未进入核心业务页面，仅完成执行前的能力/前置探测"
         actual = f"未执行到核心断言。执行停在“{stage}”阶段；{progress}，未完成用例要求的核心操作，因此不能据此判定产品功能失败。"
-        human_reason, next_action = explain_result(item)
-        blocker = f"{human_reason} 解除条件：{next_action}"
+        normalized_reason = (clean_reason or "未提供具体阻塞信息").rstrip("。； ")
+        blocker = f"{normalized_reason}。解除条件：{resolution}。"
         return actual, "", blocker
     compact = _short_dom(text(summary.get("actual") or raw_actual))
     if status == "failed":
@@ -151,9 +148,12 @@ def format_human_result(item: dict, row: dict[str, str]) -> tuple[str, str, str]
         feedback = _business_feedback(text(summary.get("actual") or raw_actual))
         if feedback:
             actual = f"已执行至第{failed_step}步；{feedback}。未观察到预期结果“{text(row.get('预期结果'))}”。"
+            failure = f"第{failed_step}步断言未满足：{feedback}，未按预期完成字段级校验；修复后需回归。"
         else:
             actual = f"已执行至第{failed_step}步；页面实际观察到：{compact}。未观察到预期结果“{text(row.get('预期结果'))}”。"
-        failure, _ = explain_result(item, text(row.get("预期结果")))
+            failure = f"第{failed_step}步断言未满足：页面未出现预期的业务结果或提示；需结合截图复核后修复并回归。"
+        if "登录" in compact and "导入订单文件" not in compact and "批量下单" not in compact:
+            failure = "执行停留在登录页，未能进入批量下单页面，因此用例核心断言未执行。"
         return actual, failure, ""
     # passed：只写业务事实，不写“UI 断言已采集”等机器状态词。
     transient_actual = _transient_feedback_result(raw_actual)
@@ -194,8 +194,33 @@ ET.register_namespace("", NS["x"])
 def source_rows(path: Path) -> tuple[list[str], list[dict[str, str]]]:
     if path.suffix.lower() not in {".yaml", ".yml"}:
         raise ValueError("The canonical final-case source must be YAML")
-    headers = CASE_HEADERS
+    headers = ["用例ID", "功能集合", "用例名称", "优先级", "前置条件", "执行步骤", "预期结果"]
     rows = case_rows_from_yaml(path)
+    for row in rows:
+        pre = text(row.get("前置条件"))
+        if pre.startswith("自造："):
+            title = text(row.get("用例名称"))
+            specific = "所需测试文件或订单数据"
+            rules = [
+                (("限购",), "限购商品及当前买家历史购买数量"),
+                (("阶梯价",), "已配置阶梯价和起购数量的商品"),
+                (("倍数",), "已配置倍数起购规则的商品"),
+                (("定向购",), "已配置定向购商品及买家权限"),
+                (("先货后款",), "已配置先货后款结算方式的商品"),
+                (("专享价",), "对当前买家生效的专享价活动商品"),
+                (("限时购",), "处于有效期内的限时购活动商品"),
+                (("优惠券",), "同一张优惠券及至少两个可用订单"),
+                (("发票",), "可进入确认订单页的有效订单及发票配置"),
+                (("运费", "活动"), "可核对的活动商品、运费模板和有效订单"),
+                (("超过200", "200单"), "可拆分为超过200笔有效订单的导入文件"),
+                (("超过100", "异步"), "可控的批量成功/失败订单状态"),
+                (("地址",), "至少一条可搜索的收货地址"),
+            ]
+            for keywords, desc in rules:
+                if all(keyword in title for keyword in keywords):
+                    specific = desc
+                    break
+            row["前置条件"] = f"商城买家账号可登录；已准备{specific}；本用例执行前独立准备数据，不复用其他用例结果。"
     return headers, rows
 
 
@@ -228,7 +253,6 @@ def load_execution_results(path: Path, source_rows_by_id: dict[str, dict[str, st
                     if text(value) and key not in _INTERNAL_PRODUCED_KEYS:
                         produced_parts.append(f"{key}:{text(value)}")
         human_actual, failure_reason, blocker_reason = format_human_result(item, source_rows_by_id.get(case_id, {}))
-        human_reason, next_action = explain_result(item, text(source_rows_by_id.get(case_id, {}).get("预期结果")))
         results[case_id] = {
             "执行状态": text(item.get("status")),
             "稳定性": text(item.get("stability")),
@@ -245,9 +269,6 @@ def load_execution_results(path: Path, source_rows_by_id: dict[str, dict[str, st
             ),
             "阻塞类型": text(item.get("blocker_type")),
             "阻塞/未执行原因": blocker_reason,
-            "原因说明（给测试人员）": human_reason,
-            "建议下一步": next_action,
-            "技术原因（给Agent）": text(item.get("technical_reason") or item.get("failure_reason") or item.get("blocker_reason") or item.get("defect_summary") or item.get("not_run_reason") or item.get("actual_result")),
         }
     return results
 
@@ -276,6 +297,17 @@ def first_sheet_path(zip_file: zipfile.ZipFile) -> str:
     raise ValueError("Cannot resolve first worksheet")
 
 
+def replace_zip_entry(zip_path: Path, member: str, payload: bytes) -> None:
+    temporary_path = zip_path.with_suffix(".tmp")
+    with zipfile.ZipFile(zip_path, "r") as source, zipfile.ZipFile(temporary_path, "w") as target:
+        for item in source.infolist():
+            if item.filename == member:
+                continue
+            target.writestr(item, source.read(item.filename))
+        target.writestr(member, payload)
+    temporary_path.replace(zip_path)
+
+
 def build_markdown(headers: list[str], rows: list[dict[str, str]], path: Path) -> None:
     lines = [
         "# 执行回填后的正式用例", "",
@@ -287,20 +319,12 @@ def build_markdown(headers: list[str], rows: list[dict[str, str]], path: Path) -
             f"## {index}. {row.get('用例ID', '')}｜{row.get('用例名称', '')}", "",
             f"- 功能集合：{row.get('功能集合', '')}",
             f"- 优先级：{row.get('优先级', '')}",
-            f"- 执行级别：{row.get('执行级别', '')}",
-            f"- 人工介入说明：{row.get('人工介入说明', '')}",
-            f"- 人工准备清单：{row.get('人工准备清单', '')}",
             f"- 前置条件：{row.get('前置条件', '')}",
             f"- 执行步骤：{row.get('执行步骤', '')}",
             f"- 预期结果：{row.get('预期结果', '')}",
             f"- 执行状态：{status}（稳定性：{row.get('稳定性', '')}）",
             f"- 实际执行结果：{row.get('执行结果', '')}",
         ])
-        if row.get("原因说明（给测试人员）"):
-            lines.append(f"- 原因说明（给测试人员）：{row['原因说明（给测试人员）']}")
-        lines.append(f"- 建议下一步：{row.get('建议下一步', '')}")
-        if row.get("技术原因（给Agent）"):
-            lines.append(f"- 技术原因（给Agent）：{row['技术原因（给Agent）']}")
         if row.get("失败原因"):
             lines.append(f"- 失败原因：{row.get('失败原因')}")
         if row.get("失败步骤"):
@@ -317,7 +341,6 @@ def build_markdown(headers: list[str], rows: list[dict[str, str]], path: Path) -
 
 def build_xlsx(template_path: Path, headers: list[str], rows: list[dict[str, str]], output_path: Path) -> None:
     shutil.copyfile(template_path, output_path)
-    readiness_styles = add_readiness_styles(output_path)
     with zipfile.ZipFile(output_path, "r") as zip_file:
         sheet_path = first_sheet_path(zip_file)
         sheet_root = ET.fromstring(zip_file.read(sheet_path))
@@ -326,7 +349,7 @@ def build_xlsx(template_path: Path, headers: list[str], rows: list[dict[str, str
         raise ValueError("Template worksheet has no sheetData")
     for child in list(sheet_data):
         sheet_data.remove(child)
-    columns = [column_name(index + 1) for index in range(len(headers))]
+    columns = [chr(ord("A") + index) for index in range(len(headers))]
     header_row = ET.Element(f"{{{NS['x']}}}row", r="1", ht="25", customHeight="1", spans=f"1:{len(headers)}")
     for column, header in zip(columns, headers):
         header_row.append(inline_cell(f"{column}1", "3" if column == "A" else "4", header))
@@ -334,9 +357,7 @@ def build_xlsx(template_path: Path, headers: list[str], rows: list[dict[str, str
     for row_number, row in enumerate(rows, 2):
         row_element = ET.Element(f"{{{NS['x']}}}row", r=str(row_number), ht="34.5", customHeight="1", spans=f"1:{len(headers)}")
         for column, header in zip(columns, headers):
-            value = row.get(header, "")
-            style = readiness_styles.get(value, "6") if header == "执行级别" else ("5" if column == "A" else "6")
-            row_element.append(inline_cell(f"{column}{row_number}", style, value))
+            row_element.append(inline_cell(f"{column}{row_number}", "5" if column == "A" else "6", row.get(header, "")))
         sheet_data.append(row_element)
     last_column = columns[-1]
     last_row = len(rows) + 1
@@ -367,7 +388,7 @@ def main() -> None:
     headers, rows = source_rows(source_path)
     source_rows_by_id = {text(row.get("用例ID")): row for row in rows}
     execution_results = load_execution_results(execution_path, source_rows_by_id)
-    execution_headers = ["执行状态", "稳定性", "执行结果", "原因说明（给测试人员）", "建议下一步", "失败原因", "失败步骤", "产出数据", "证据", "阻塞类型", "阻塞/未执行原因", "技术原因（给Agent）"]
+    execution_headers = ["执行状态", "稳定性", "执行结果", "失败原因", "失败步骤", "产出数据", "证据", "阻塞类型", "阻塞/未执行原因"]
     headers = headers + [header for header in execution_headers if header not in headers]
     merged_rows: list[dict[str, str]] = []
     missing: list[str] = []

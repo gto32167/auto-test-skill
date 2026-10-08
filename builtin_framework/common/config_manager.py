@@ -31,13 +31,13 @@ class ConfigManager:
                 "password": ""
             },
             "login": {
-                "url": "https://passportnew-dev.xiaokeduo.com/#/login"
+                "url": ""
             },
             "runtime": {
                 "test_url_input": "",
-                "dashboard_url": "https://yunstore-dev.xiaokeduo.com/#/100000000384/dashboard",
-                "goods_list_url": "https://yunstore-dev.xiaokeduo.com/#/100000000384/goods/onsale",
-                "login_url": "https://passportnew-dev.xiaokeduo.com/#/login",
+                "dashboard_url": "",
+                "goods_list_url": "",
+                "login_url": "",
                 "auth_storage_state_path": "artifacts/auth/backend_storage_state.json",
                 "backend_username": "",
                 "backend_password": "",
@@ -47,14 +47,11 @@ class ConfigManager:
                 "h5_default_phone": "",
                 "h5_verification_code": "",
                 "pay_password": "",
-                "business_origin": "https://yunstore-dev.xiaokeduo.com",
-                "passport_origin": "https://passportnew-dev.xiaokeduo.com",
-                "store_id": "100000000384"
+                "business_origin": "",
+                "passport_origin": "",
+                "store_id": ""
             },
-            "url_mappings": {
-                "https://passportnew-dev.xiaokeduo.com": "https://passportnew-dev.xiaokeduo.com",
-                "https://yunstore-dev.xiaokeduo.com": "https://yunstore-dev.xiaokeduo.com"
-            },
+            "url_mappings": {},
             "allure": {
                 "path": "allure",
                 "enabled": True
