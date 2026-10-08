@@ -59,6 +59,7 @@ def run(*args: object) -> subprocess.CompletedProcess[str]:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONDONTWRITEBYTECODE": "1"},
         timeout=60,
     )
 
@@ -348,6 +349,8 @@ class WorkflowGateTests(unittest.TestCase):
                 },
             ],
         }
+        for case in self.case_document["test_cases"]:
+            case["execution_readiness"] = {"level": "auto", "reason": "", "human_actions": [], "preparations": []}
         write_json(self.cases, self.case_document)
 
     def tearDown(self) -> None:
@@ -439,6 +442,7 @@ class WorkflowGateTests(unittest.TestCase):
                 semantic_actions = ["perform_operation", "observe_outcome"]
             plan_item = {
                     "case_id": case["case_id"],
+                    "readiness": {"disposition": "run", "preparations": []},
                     "semantic_contract_sha256": semantic_contract_hash(case),
                     "execution_profile": case["execution_profile"],
                     "executor_capability": case["execution_contract"]["capability"],
@@ -510,6 +514,13 @@ class WorkflowGateTests(unittest.TestCase):
                     "input_type": "text",
                     "editable": "true",
                     "nearest_container": "收件人表单项",
+                }
+            if any(observation["key"] == "prompt_text" for observation in observations):
+                plan_item["feedback_wait_policy"] = {
+                    "baseline_before_action": True,
+                    "presentations": ["modal", "toast", "inline", "banner"],
+                    "timeout_ms": 3000, "poll_interval_ms": 100,
+                    "screenshot_on_detection": True, "classify_after_capture": True,
                 }
             plans.append(plan_item)
         write_json(
@@ -840,6 +851,9 @@ class WorkflowGateTests(unittest.TestCase):
         )
         for case_id in ("TC-001", "TC-002", "TC-003"):
             (self.screenshots / f"{case_id}.png").write_bytes(ONE_PIXEL_PNG)
+        document = json.loads(self.execution.read_text(encoding="utf-8"))
+        self.refresh_execution_summary(document)
+        write_json(self.execution, document)
 
     def upgrade_execution_evidence_to_v2(self, document: dict[str, object]) -> None:
         document["execution_meta"]["evidence_manifest_version"] = "2.0"
@@ -971,6 +985,15 @@ class WorkflowGateTests(unittest.TestCase):
         counts = {status: 0 for status in ("passed", "failed", "blocked", "not_run")}
         for result in results:
             counts[str(result["status"])] += 1
+            for payload in [result, *result.get("attempts", [])]:
+                prompt = (payload.get("observations") or {}).get("prompt_text")
+                if isinstance(prompt, dict):
+                    screenshot = f"{result['case_id']}.png"
+                    payload["feedback_observation"] = {
+                        "presentation": "inline", "text": prompt["value"],
+                        "appeared_after_ms": 200, "auto_dismissed": False,
+                        "screenshot_path": screenshot,
+                    }
         metrics = execution_metrics(results)
         document["summary"] = {"total": len(results), **counts, **metrics}
         document["execution_meta"]["resource_budget"]["actual_attempts"] = metrics["total_attempts"]
@@ -1678,9 +1701,9 @@ class WorkflowGateTests(unittest.TestCase):
         ]
         self.assertEqual(
             headers,
-            ["用例ID", "功能集合", "用例名称", "优先级", "前置条件", "执行步骤", "预期结果"],
+            ["用例ID", "功能集合", "用例名称", "优先级", "执行级别", "人工介入说明", "人工准备清单", "前置条件", "执行步骤", "预期结果"],
         )
-        self.assertEqual(root.find("x:dimension", namespace).get("ref"), "A1:G4")
+        self.assertEqual(root.find("x:dimension", namespace).get("ref"), "A1:J4")
 
     def test_priority_policy_gate_reports_valid_distribution(self) -> None:
         self.expand_case_set_with_priorities(["P0"] * 5 + ["P1"] * 7 + ["P2"] * 8)

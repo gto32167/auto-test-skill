@@ -263,6 +263,8 @@ execution_results:
       executor_capability: "field_validation"
       primary_channel: "ui"
       intent_snapshot: {kind: "field_validation", polarity: "negative", interface: "ui", field_id: "goods.name", input_class: "empty", expected_outcome: "rejected"}
+    human_reason: "商品名称没填，系统却仍创建了商品；这一步应该拦截保存，实际没有拦住。"
+    next_action: "核对截图和新增商品记录，确认问题后提交缺陷，修复后回归。"
     actual_result: "商品名称为空仍产生新增商品记录，未满足禁止写入的硬断言"
     result_summary:
       expected: "空值提交被阻止且不写入商品"

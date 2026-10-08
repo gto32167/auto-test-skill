@@ -27,6 +27,21 @@ from common.runtime_config import (
     merge_runtime_parameters,
 )
 from common.url_utils import resolve_target_url
+from common.execution_preflight import normalize_node, prepared_nodes
+
+
+def pytest_collection_modifyitems(config, items):
+    try:
+        nodes = prepared_nodes(Path(__file__).resolve().parent)
+    except (OSError, ValueError) as exc:
+        raise pytest.UsageError(str(exc)) from exc
+    if nodes is None:
+        return
+    allowed = set(nodes)
+    selected = [item for item in items if normalize_node(item.nodeid) in allowed]
+    deselected = [item for item in items if normalize_node(item.nodeid) not in allowed]
+    config.hook.pytest_deselected(items=deselected)
+    items[:] = sorted(selected, key=lambda item: nodes.index(normalize_node(item.nodeid)))
 
 
 DEFAULT_LOGIN_URL = "https://passportnew-dev.xiaokeduo.com/#/login"

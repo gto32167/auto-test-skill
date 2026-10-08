@@ -1,4 +1,8 @@
 execution_meta:
+  # 出现 assisted/manual 用例时，先展示人工准备清单，再记录真实人工确认；禁止代填。
+  # preflight_acknowledgement:
+  #   confirmed_by: "实际确认人"
+  #   confirmed_at: "2026-10-08T14:00:00+08:00"
   final_cases_path: "06_final_test_cases.yaml"
   final_cases_sha256: "运行 validate_case_design.py 后填写最终用例 SHA-256"
   case_design_gate_path: "07_case_design_gate.json"
@@ -27,6 +31,9 @@ execution_meta:
 browser_execution_plan:
   # 必须按 P0 -> P1 -> P2 稳定排序；同一优先级内保持最终用例原顺序。
   - execution_id: "EXE-001"
+    readiness:
+      disposition: "run" # run / skip / manual
+      preparations: []
     case_id: "TC-001"
     semantic_contract_sha256: "从 07_case_design_gate.json 的 semantic_contracts.TC-001 复制"
     execution_profile: "goods_create"
@@ -92,6 +99,9 @@ browser_execution_plan:
       capture_on_failure: true
 
   - execution_id: "EXE-002"
+    readiness:
+      disposition: "run" # run / skip / manual
+      preparations: []
     case_id: "TC-003"
     semantic_contract_sha256: "从 07_case_design_gate.json 的 semantic_contracts.TC-003 复制"
     execution_profile: "goods_field"
@@ -174,6 +184,9 @@ browser_execution_plan:
       capture_on_failure: true
 
   - execution_id: "EXE-003"
+    readiness:
+      disposition: "run" # run / skip / manual
+      preparations: []
     case_id: "TC-002"
     semantic_contract_sha256: "从 07_case_design_gate.json 的 semantic_contracts.TC-002 复制"
     execution_profile: "goods_field"

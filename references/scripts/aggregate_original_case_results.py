@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from result_explanation import explain_result
 
 
 VALID_STATUSES = {"passed", "failed", "blocked", "not_run"}
@@ -60,6 +61,7 @@ def child_summary(case: dict[str, Any], result: dict[str, Any] | None) -> dict[s
     if status not in VALID_STATUSES:
         status = "blocked"
     summary = result.get("result_summary") or {}
+    human_reason, next_action = explain_result(result, text((case.get("assertions") or [{}])[0].get("expected")))
     return {
         "case_id": case_id,
         "status": status,
@@ -72,6 +74,8 @@ def child_summary(case: dict[str, Any], result: dict[str, Any] | None) -> dict[s
         "actual_result": text(result.get("actual_result") or summary.get("actual")),
         "evidence": result.get("evidence") or {},
         "produced_data": result.get("produced_data") or {},
+        "human_reason": human_reason,
+        "next_action": next_action,
     }
 
 
@@ -141,6 +145,8 @@ def aggregate(final_cases: list[dict[str, Any]], execution_results: list[dict[st
                 "blocker_reason": "；".join(
                     f"{item['case_id']}：{item['blocker_reason'] or '子用例未形成可判定结果'}" for item in blocked_children
                 ),
+                "human_reason": "；".join(f"{item['case_id']}：{item.get('human_reason') or item.get('blocker_reason')}" for item in failed_children + blocked_children),
+                "next_action": "；".join(dict.fromkeys(item.get("next_action", "") for item in failed_children + blocked_children if item.get("next_action"))),
             }
         )
     return {

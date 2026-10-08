@@ -9,6 +9,8 @@ from typing import Any
 import yaml
 
 from semantic_contract import semantic_contract_hash
+from execution_readiness import NON_RUN_REASONS, disposition, validate_preflight
+from result_explanation import explain_result
 from workflow_gate_common import (
     as_list,
     list_from,
@@ -108,6 +110,9 @@ def main() -> None:
     plan_meta = plan_document.get("execution_meta") or {}
     plan_items = list_from(plan_document, ("browser_execution_plan", "execution_plan"), "execution_plan")
     plans_by_id = {text(item.get("case_id")): item for item in plan_items}
+    preflight_errors = validate_preflight(final_cases, plan_items, plan_meta)
+    if preflight_errors:
+        raise SystemExit("\n".join(preflight_errors))
     final_ids = [text(item.get("case_id")) for item in final_cases]
     cases_by_id = {text(item.get("case_id")): item for item in final_cases}
     final_position = {case_id: index for index, case_id in enumerate(final_ids, start=1)}
@@ -145,7 +150,8 @@ def main() -> None:
         case = cases_by_id[case_id]
         index = final_position[case_id]
         plan = plans_by_id.get(case_id) or {}
-        minimum_attempts, budget_errors = execution_minimum_attempts(case, plan, plan_meta)
+        route = disposition(plan)
+        minimum_attempts, budget_errors = (0, []) if route in NON_RUN_REASONS else execution_minimum_attempts(case, plan, plan_meta)
         if budget_errors:
             raise SystemExit("; ".join(budget_errors))
         semantic_hash = semantic_contract_hash(case)
@@ -153,7 +159,16 @@ def main() -> None:
         raw = status_by_node.get(test_node)
         p0_gate = evaluate_p0_stop_gate(final_cases, generated)
         stopped_before_case = text(case.get("priority")).upper() in {"P1", "P2"} and p0_gate["triggered"]
-        if stopped_before_case:
+        if route in NON_RUN_REASONS:
+            if raw and (as_list(raw.get("attempts")) or normalize_execution_status(raw.get("status")) in {"passed", "failed", "blocked"}):
+                raise SystemExit(f"用例 {case_id} 已在执行前分流/跳过，不应存在自动执行记录")
+            decision = plan.get("readiness") or {}
+            reason = text(decision.get("reason"))
+            result = not_run_result(index=index, case=case, mapping=mapping, semantic_hash=semantic_hash,
+                                    minimum_attempts=0, reason_code=NON_RUN_REASONS[route],
+                                    actual=f"执行前已安排{'人工执行' if route == 'manual' else '跳过'}：{reason}", key_message=reason)
+            result["preflight_reason"] = reason
+        elif stopped_before_case:
             raw_attempts = [attempt for attempt in as_list((raw or {}).get("attempts")) if isinstance(attempt, dict)]
             raw_status = normalize_execution_status((raw or {}).get("status"))
             if raw_attempts or raw_status in {"passed", "failed", "blocked"}:
@@ -207,6 +222,7 @@ def main() -> None:
                 "attempts": attempts,
                 "produced_data": (selected or {}).get("produced_data") or (selected or {}).get("produced") or raw.get("produced_data") or raw.get("produced") or {},
                 "observations": (selected or {}).get("observations") or raw.get("observations") or {},
+                "feedback_observation": (selected or {}).get("feedback_observation") or raw.get("feedback_observation") or {},
                 "evidence": raw.get("evidence") or {},
                 "failed_step_no": raw.get("failed_step_no"),
                 "blocker_type": text(raw.get("blocker_type")),
@@ -214,6 +230,8 @@ def main() -> None:
                 "not_run_reason": text(raw.get("not_run_reason")),
                 "defect_suspected": bool(raw.get("defect_suspected")),
                 "defect_summary": text(raw.get("defect_summary")),
+                "failure_reason": text(raw.get("failure_reason")),
+                "technical_reason": text(raw.get("technical_reason") or raw.get("error")),
                 "defect": raw.get("defect") or {},
                 "capability_probe": raw.get("capability_probe") or {},
                 "stability": decision.stability if decision is not None else text(raw.get("stability")) or ("blocked" if status == "blocked" else "stable"),
@@ -227,7 +245,10 @@ def main() -> None:
                     "reason": decision.reason if decision is not None else "",
                 },
                 "telemetry": raw.get("telemetry") or {},
+                "human_reason": text(raw.get("human_reason") or (selected or {}).get("human_reason")),
+                "next_action": text(raw.get("next_action") or (selected or {}).get("next_action")),
             }
+        result["human_reason"], result["next_action"] = explain_result(result, text(case.get("formal_expected_result")))
         generated.append(result)
 
     generated_by_id = {text(item.get("case_id")): item for item in generated}

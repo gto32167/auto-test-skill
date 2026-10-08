@@ -85,6 +85,7 @@ function progressText(result) {
 }
 
 function humanExplanation(result) {
+  if (result.human_reason) return result.human_reason;
   if (result.status === "passed") return "所有拆分检查均达到预期。";
   if (result.status === "failed") {
     const assertions = (result.failed_child_cases || []).map((item) =>
@@ -102,6 +103,7 @@ function humanExplanation(result) {
 }
 
 function nextAction(result) {
+  if (result.next_action) return result.next_action;
   if (result.status === "passed") return "无需处理。";
   const raw = cleanText([
     result.failure_reason,
