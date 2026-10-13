@@ -19,7 +19,10 @@ import yaml
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
+FRAMEWORK_ROOT = SCRIPT_DIR.parent.parent / "builtin_framework"
+sys.path.insert(0, str(FRAMEWORK_ROOT))
 
+from common.run_metrics import finalize_run, finish_stage, initialize_run, record_token_usage, start_stage
 from semantic_contract import normalized_test_intent, semantic_contract_hash
 from execution_quality import (
     P0_STOP_ACTUAL,
@@ -87,7 +90,24 @@ class WorkflowGateTests(unittest.TestCase):
 
         write_json(
             self.requirements,
-            {"requirements": [{"requirement_id": "REQ-001", "title": "创建订单", "disposition": "covered"}]},
+            {
+                "atomicity_contract_version": "1.0",
+                "source_documents": [{"document_id": "PRD-001", "path": "订单PRD.docx"}],
+                "requirements": [{"requirement_id": "REQ-001", "title": "创建订单", "disposition": "covered"}],
+                "atomic_rules": [{
+                    "rule_id": "RULE-001", "requirement_id": "REQ-001",
+                    "source_document": "PRD-001", "source_locator": {"section": "3.1"},
+                    "source_excerpt": "提交有效订单信息后创建订单；收件人必填。",
+                    "rule_type": "field", "statement": "收件人字段支持合法值且空值被拒绝",
+                    "coverage_plan": {"required_design_methods": ["scenario", "equivalence_partitioning"], "required_dimensions": ["positive", "negative"], "required_classes": ["main_flow", "required_empty", "valid"]},
+                    "disposition": "covered",
+                }],
+                "coverage_obligations": [
+                    {"obligation_id": "OB-001", "rule_id": "RULE-001", "test_point_id": "TP-001", "design_method": "scenario", "coverage_dimension": "positive", "coverage_class": "main_flow", "verification_target": "有效信息提交后订单创建成功", "polarity": "positive", "interface": "ui", "expected_outcome": "committed"},
+                    {"obligation_id": "OB-002", "rule_id": "RULE-001", "test_point_id": "TP-002", "design_method": "equivalence_partitioning", "coverage_dimension": "negative", "coverage_class": "required_empty", "verification_target": "收件人为空时显示必填提示", "polarity": "negative", "interface": "ui", "expected_outcome": "rejected", "field_id": "receiver_name"},
+                    {"obligation_id": "OB-003", "rule_id": "RULE-001", "test_point_id": "TP-003", "design_method": "equivalence_partitioning", "coverage_dimension": "positive", "coverage_class": "valid", "verification_target": "收件人字段保留合法输入值", "polarity": "positive", "interface": "ui", "expected_outcome": "accepted", "field_id": "receiver_name"},
+                ],
+            },
         )
         write_json(
             self.points,
@@ -101,6 +121,9 @@ class WorkflowGateTests(unittest.TestCase):
                 "test_points": [
                     {
                         "test_point_id": "TP-001",
+                        "obligation_id": "OB-001",
+                        "verification_target": "有效信息提交后订单创建成功",
+                        "coverage_class": "main_flow",
                         "requirement_ids": ["REQ-001"],
                         "feature_group": "买家端-订单创建页",
                         "granularity": "scenario",
@@ -113,6 +136,8 @@ class WorkflowGateTests(unittest.TestCase):
                     },
                     {
                         "test_point_id": "TP-002",
+                        "obligation_id": "OB-002",
+                        "verification_target": "收件人为空时显示必填提示",
                         "requirement_ids": ["REQ-001"],
                         "feature_group": "买家端-订单创建页",
                         "granularity": "field",
@@ -127,6 +152,8 @@ class WorkflowGateTests(unittest.TestCase):
                     },
                     {
                         "test_point_id": "TP-003",
+                        "obligation_id": "OB-003",
+                        "verification_target": "收件人字段保留合法输入值",
                         "requirement_ids": ["REQ-001"],
                         "feature_group": "买家端-订单创建页",
                         "granularity": "field",
@@ -181,6 +208,8 @@ class WorkflowGateTests(unittest.TestCase):
                 {
                     "case_id": "TC-001",
                     "test_point_id": "TP-001",
+                    "obligation_id": "OB-001",
+                    "verification_point": "有效信息提交后订单创建成功",
                     "case_title": "有效信息创建订单",
                     "requirement_ids": ["REQ-001"],
                     "feature_group": "买家端-订单创建页",
@@ -245,6 +274,8 @@ class WorkflowGateTests(unittest.TestCase):
                 {
                     "case_id": "TC-002",
                     "test_point_id": "TP-002",
+                    "obligation_id": "OB-002",
+                    "verification_point": "收件人为空时显示必填提示",
                     "case_title": "收件人为空时禁止提交",
                     "requirement_ids": ["REQ-001"],
                     "feature_group": "买家端-订单创建页",
@@ -302,6 +333,8 @@ class WorkflowGateTests(unittest.TestCase):
                 {
                     "case_id": "TC-003",
                     "test_point_id": "TP-003",
+                    "obligation_id": "OB-003",
+                    "verification_point": "收件人字段保留合法输入值",
                     "case_title": "收件人合法值可输入",
                     "requirement_ids": ["REQ-001"],
                     "feature_group": "买家端-订单创建页",
@@ -350,13 +383,22 @@ class WorkflowGateTests(unittest.TestCase):
             ],
         }
         for case in self.case_document["test_cases"]:
-            case["execution_readiness"] = {"level": "auto", "reason": "", "human_actions": [], "preparations": []}
+            case["execution_readiness"] = {
+                "level": "auto", "reason": "", "human_actions": [], "preparations": [],
+            }
         write_json(self.cases, self.case_document)
 
     def tearDown(self) -> None:
         self.temp.cleanup()
 
     def create_case_gate(self) -> subprocess.CompletedProcess[str]:
+        # This fixture reproduces a pre-contract artifact: it predates the
+        # generation/review quality contract and therefore declares none of the
+        # contract fields.  It is run through the documented legacy-audit path so
+        # the execution/delivery-chain tests below stay focused on their own
+        # gates.  The strict contract behaviour is covered by
+        # test_quality_contract_switch.py against a fully contract-compliant
+        # artifact.
         return run(
             VALIDATE_CASES,
             "--requirements",
@@ -367,11 +409,14 @@ class WorkflowGateTests(unittest.TestCase):
             self.cases,
             "--output",
             self.case_gate,
+            "--legacy-audit",
         )
 
     def expand_case_set_with_priorities(self, priorities: list[str]) -> None:
         point_document = json.loads(self.points.read_text(encoding="utf-8"))
+        requirement_document = json.loads(self.requirements.read_text(encoding="utf-8"))
         point_templates = point_document["test_points"]
+        obligation_templates = requirement_document["coverage_obligations"]
         case_templates = self.case_document["test_cases"]
         rationale_by_priority = {
             "P0": "核心交易流程或高影响数据风险，失败会阻断成交。",
@@ -380,23 +425,33 @@ class WorkflowGateTests(unittest.TestCase):
         }
         expanded_points = []
         expanded_cases = []
+        expanded_obligations = []
         for index, priority in enumerate(priorities, 1):
             point = deepcopy(point_templates[(index - 1) % len(point_templates)])
             case = deepcopy(case_templates[(index - 1) % len(case_templates)])
             point_id = f"TP-{index:03d}"
             case_id = f"TC-{index:03d}"
+            obligation_id = f"OB-{index:03d}"
             rationale = rationale_by_priority[priority]
             point["test_point_id"] = point_id
+            point["obligation_id"] = obligation_id
             point["priority"] = priority
             point["priority_rationale"] = rationale
             case["case_id"] = case_id
             case["test_point_id"] = point_id
+            case["obligation_id"] = obligation_id
+            obligation = deepcopy(obligation_templates[(index - 1) % len(obligation_templates)])
+            obligation["obligation_id"] = obligation_id
+            obligation["test_point_id"] = point_id
+            obligation["verification_target"] = case["verification_point"]
             case["priority"] = priority
             case["priority_rationale"] = rationale
             case["assertions"][0]["assert_id"] = f"A-{index:03d}"
             expanded_points.append(point)
             expanded_cases.append(case)
+            expanded_obligations.append(obligation)
         point_document["test_points"] = expanded_points
+        requirement_document["coverage_obligations"] = expanded_obligations
         self.case_document["test_cases"] = expanded_cases
         sample_count = max(1, (len(expanded_cases) + 9) // 10)
         p0_case_ids = [case["case_id"] for case in expanded_cases if case["priority"] == "P0"]
@@ -426,6 +481,7 @@ class WorkflowGateTests(unittest.TestCase):
             },
         }
         write_json(self.points, point_document)
+        write_json(self.requirements, requirement_document)
         write_json(self.cases, self.case_document)
 
     def create_execution_plan(self) -> None:
@@ -442,7 +498,6 @@ class WorkflowGateTests(unittest.TestCase):
                 semantic_actions = ["perform_operation", "observe_outcome"]
             plan_item = {
                     "case_id": case["case_id"],
-                    "readiness": {"disposition": "run", "preparations": []},
                     "semantic_contract_sha256": semantic_contract_hash(case),
                     "execution_profile": case["execution_profile"],
                     "executor_capability": case["execution_contract"]["capability"],
@@ -515,13 +570,25 @@ class WorkflowGateTests(unittest.TestCase):
                     "editable": "true",
                     "nearest_container": "收件人表单项",
                 }
+            case_change_evidence = case.get("change_evidence") or {}
+            if isinstance(case_change_evidence, dict) and case_change_evidence.get("required") is True:
+                plan_item["evidence_plan"]["before_after"] = True
+                plan_item["evidence_plan"]["attempt_screenshots"] = [
+                    f"{case['case_id']}_A1_before.png",
+                    f"{case['case_id']}_A1_after.png",
+                    f"{case['case_id']}_A2_before.png",
+                    f"{case['case_id']}_A2_after.png",
+                ]
             if any(observation["key"] == "prompt_text" for observation in observations):
                 plan_item["feedback_wait_policy"] = {
                     "baseline_before_action": True,
                     "presentations": ["modal", "toast", "inline", "banner"],
-                    "timeout_ms": 3000, "poll_interval_ms": 100,
-                    "screenshot_on_detection": True, "classify_after_capture": True,
+                    "timeout_ms": 5000,
+                    "poll_interval_ms": 50,
+                    "screenshot_on_detection": True,
+                    "classify_after_capture": True,
                 }
+            plan_item["readiness"] = {"disposition": "run", "preparations": []}
             plans.append(plan_item)
         write_json(
             self.execution_plan,
@@ -581,6 +648,16 @@ class WorkflowGateTests(unittest.TestCase):
         first_semantic_hash = semantic_contract_hash(first_case)
         second_semantic_hash = semantic_contract_hash(second_case)
         third_semantic_hash = semantic_contract_hash(third_case)
+        first_change_keys = [
+            item["key"]
+            for item in first_case["result_contract"]["observations"]
+            if item["key"] in {"before_state", "after_state", "changed", "comparison_verified"}
+        ]
+        first_ui_evidence_keys = [
+            item["key"]
+            for item in first_case["result_contract"]["observations"]
+            if item["source"] == "ui" and item.get("evidence_required") is True
+        ]
         first_trace = self.execution_trace("TC-001")
         second_trace = self.execution_trace("TC-002")
         third_trace = self.execution_trace("TC-003")
@@ -624,19 +701,56 @@ class WorkflowGateTests(unittest.TestCase):
                     "evidence_refs": [f"api:orders/{order_no}"],
                 },
             }
-            return {
+            produced_data = {
+                "success_text": f"订单 {order_no} 创建成功",
+                "order_no": order_no,
+                "mutation_committed": True,
+            }
+            payload = {
                 "attempt": attempt,
                 "status": "passed",
                 "detail": "订单创建成功",
                 "semantic_contract_sha256": first_semantic_hash,
                 "execution_trace": first_trace,
                 "observations": observations,
-                "produced_data": {
-                    "success_text": f"订单 {order_no} 创建成功",
-                    "order_no": order_no,
-                    "mutation_committed": True,
-                },
+                "produced_data": produced_data,
             }
+            if first_change_keys:
+                before_state = "提交前订单尚未保存，收件人字段保留输入值"
+                after_state = f"订单 {order_no} 保存后重新打开，回显收件人输入值"
+                observations["before_state"] = {
+                    "value": before_state,
+                    "source": "ui",
+                    "evidence_refs": ["TC-001.png"],
+                }
+                observations["after_state"] = {
+                    "value": after_state,
+                    "source": "ui",
+                    "evidence_refs": ["TC-001.png"],
+                }
+                observations["changed"] = {
+                    "value": True,
+                    "source": "runtime",
+                    "evidence_refs": ["runtime/TC-001_change_comparison.json"],
+                }
+                observations["comparison_verified"] = {
+                    "value": True,
+                    "source": "runtime",
+                    "evidence_refs": ["runtime/TC-001_change_comparison.json"],
+                }
+                produced_data.update({
+                    "before_state": before_state,
+                    "after_state": after_state,
+                    "changed": True,
+                    "comparison_verified": True,
+                })
+                payload["change_comparison"] = {
+                    "before_value": before_state,
+                    "after_value": after_state,
+                    "changed": True,
+                    "comparison_verified": True,
+                }
+            return payload
 
         def failed_rejection_attempt(attempt: int) -> dict[str, object]:
             observations = {
@@ -662,6 +776,13 @@ class WorkflowGateTests(unittest.TestCase):
                     "prompt_text": "订单创建成功",
                     "mutation_committed": True,
                 },
+                "feedback_observation": {
+                    "presentation": "inline",
+                    "text": "订单创建成功",
+                    "appeared_after_ms": 1000,
+                    "auto_dismissed": False,
+                    "screenshot_path": "TC-002.png",
+                },
             }
 
         def passed_field_attempt(attempt: int) -> dict[str, object]:
@@ -684,6 +805,40 @@ class WorkflowGateTests(unittest.TestCase):
 
         selected_attempt = passed_order_attempt(1, "O-001")
         selected_failure = failed_rejection_attempt(3)
+        first_result = {
+            "case_id": "TC-001",
+            "status": "passed",
+            "attempts": [
+                selected_attempt,
+                passed_order_attempt(2, "O-002"),
+            ],
+            "selected_attempt": 1,
+            "semantic_contract_sha256": first_semantic_hash,
+            "execution_trace": first_trace,
+            "actual_result": "创建订单 O-001，页面显示创建成功",
+            "result_summary": {
+                "expected": "订单创建成功",
+                "actual": "订单 O-001 创建成功",
+                "key_message": "创建成功",
+                "mutation": True,
+                "object_id": "O-001",
+            },
+            "observations": selected_attempt["observations"],
+            "produced_data": selected_attempt["produced_data"],
+            "stability": "stable",
+            "retry_policy": {
+                "minimum_attempts": 2,
+                "required_attempts": 2,
+                "third_attempt_required": False,
+                "single_run_exempt": False,
+                "full_retry_upgraded": False,
+                "priority": "P0",
+                "reason": "首两遍均通过",
+            },
+            "evidence": evidence_manifest("TC-001", first_ui_evidence_keys, "关键结果 订单 O-001 创建成功"),
+        }
+        if first_change_keys:
+            first_result["change_comparison"] = selected_attempt["change_comparison"]
         write_json(
             self.execution,
             {
@@ -727,38 +882,7 @@ class WorkflowGateTests(unittest.TestCase):
                     },
                 },
                 "execution_results": [
-                    {
-                        "case_id": "TC-001",
-                        "status": "passed",
-                        "attempts": [
-                            selected_attempt,
-                            passed_order_attempt(2, "O-002"),
-                        ],
-                        "selected_attempt": 1,
-                        "semantic_contract_sha256": first_semantic_hash,
-                        "execution_trace": first_trace,
-                        "actual_result": "创建订单 O-001，页面显示创建成功",
-                        "result_summary": {
-                            "expected": "订单创建成功",
-                            "actual": "订单 O-001 创建成功",
-                            "key_message": "创建成功",
-                            "mutation": True,
-                            "object_id": "O-001",
-                        },
-                        "observations": selected_attempt["observations"],
-                        "produced_data": selected_attempt["produced_data"],
-                        "stability": "stable",
-                        "retry_policy": {
-                            "minimum_attempts": 2,
-                            "required_attempts": 2,
-                            "third_attempt_required": False,
-                            "single_run_exempt": False,
-                            "full_retry_upgraded": False,
-                            "priority": "P0",
-                            "reason": "首两遍均通过",
-                        },
-                        "evidence": evidence_manifest("TC-001", ["success_text", "order_no"], "关键结果 订单 O-001 创建成功"),
-                    },
+                    first_result,
                     {
                         "case_id": "TC-002",
                         "status": "failed",
@@ -781,6 +905,7 @@ class WorkflowGateTests(unittest.TestCase):
                         },
                         "observations": selected_failure["observations"],
                         "produced_data": selected_failure["produced_data"],
+                        "feedback_observation": selected_failure["feedback_observation"],
                         "stability": "unstable",
                         "retry_policy": {
                             "minimum_attempts": 2,
@@ -851,9 +976,6 @@ class WorkflowGateTests(unittest.TestCase):
         )
         for case_id in ("TC-001", "TC-002", "TC-003"):
             (self.screenshots / f"{case_id}.png").write_bytes(ONE_PIXEL_PNG)
-        document = json.loads(self.execution.read_text(encoding="utf-8"))
-        self.refresh_execution_summary(document)
-        write_json(self.execution, document)
 
     def upgrade_execution_evidence_to_v2(self, document: dict[str, object]) -> None:
         document["execution_meta"]["evidence_manifest_version"] = "2.0"
@@ -873,9 +995,15 @@ class WorkflowGateTests(unittest.TestCase):
                 if case["test_intent"]["kind"] == "field_validation"
                 else "assertion_state_view"
             )
+            case_change = case.get("change_evidence") or {}
+            change_required = isinstance(case_change, dict) and case_change.get("required") is True
             canonical_manifest = result["evidence"]["manifest"][0]
             selected_attempt = int(result["selected_attempt"])
-            source_name = f"{case_id}_A{selected_attempt}_assertion.png"
+            if change_required:
+                canonical_manifest["phase"] = "after"
+                source_name = f"{case_id}_A{selected_attempt}_after.png"
+            else:
+                source_name = f"{case_id}_A{selected_attempt}_assertion.png"
             canonical_manifest.update(
                 {
                     "headless": False,
@@ -885,22 +1013,30 @@ class WorkflowGateTests(unittest.TestCase):
                     "observed_target_text": canonical_manifest["content_text"],
                 }
             )
-            for attempt in result["attempts"]:
-                attempt_no = int(attempt["attempt"])
-                attempt_name = f"{case_id}_A{attempt_no}_assertion.png"
-                (self.screenshots / attempt_name).write_bytes(ONE_PIXEL_PNG)
-                attempt["evidence"] = {
-                    "screenshots": [f"artifacts/screenshots/{attempt_name}"],
-                    "manifest": [
+            if change_required:
+                selected_before = f"{case_id}_A{selected_attempt}_before.png"
+                selected_after = f"{case_id}_A{selected_attempt}_after.png"
+                for name in (selected_before, selected_after):
+                    (self.screenshots / name).write_bytes(ONE_PIXEL_PNG)
+                    declared = f"artifacts/screenshots/{name}"
+                    if declared not in result["evidence"]["screenshots"]:
+                        result["evidence"]["screenshots"].append(declared)
+                for name, phase in (
+                    (selected_before, "before"),
+                    (selected_after, "after"),
+                ):
+                    result["evidence"]["manifest"].append(
                         {
-                            "file": f"artifacts/screenshots/{attempt_name}",
+                            "file": f"artifacts/screenshots/{name}",
                             "sha256": screenshot_sha256,
                             "case_id": case_id,
-                            "attempt": attempt_no,
-                            "assertion_moment": "本次尝试完成最终断言后",
+                            "phase": phase,
+                            "assertion_moment": canonical_manifest["assertion_moment"],
                             "target": canonical_manifest["target"],
                             "browser": "chromium",
                             "headless": False,
+                            "selected_attempt": selected_attempt,
+                            "source_attempt_file": f"artifacts/screenshots/{name}",
                             "evidence_scope": scope,
                             "semantic_keys": deepcopy(canonical_manifest["semantic_keys"]),
                             "content_text": canonical_manifest["content_text"],
@@ -909,8 +1045,85 @@ class WorkflowGateTests(unittest.TestCase):
                             "content_verified": True,
                             "verification_method": "text_anchor",
                         }
-                    ],
-                }
+                    )
+            for attempt in result["attempts"]:
+                attempt_no = int(attempt["attempt"])
+                attempt_name = f"{case_id}_A{attempt_no}_assertion.png"
+                (self.screenshots / attempt_name).write_bytes(ONE_PIXEL_PNG)
+                if change_required:
+                    attempt_before = f"{case_id}_A{attempt_no}_before.png"
+                    attempt_after = f"{case_id}_A{attempt_no}_after.png"
+                    for name in (attempt_before, attempt_after):
+                        (self.screenshots / name).write_bytes(ONE_PIXEL_PNG)
+                    attempt["evidence"] = {
+                        "screenshots": [
+                            f"artifacts/screenshots/{attempt_before}",
+                            f"artifacts/screenshots/{attempt_after}",
+                        ],
+                        "manifest": [
+                            {
+                                "file": f"artifacts/screenshots/{attempt_before}",
+                                "sha256": screenshot_sha256,
+                                "case_id": case_id,
+                                "attempt": attempt_no,
+                                "phase": "before",
+                                "assertion_moment": "变化动作发生前：前置数据加载完成且动作尚未执行",
+                                "target": canonical_manifest["target"],
+                                "browser": "chromium",
+                                "headless": False,
+                                "evidence_scope": scope,
+                                "semantic_keys": deepcopy(canonical_manifest["semantic_keys"]),
+                                "content_text": canonical_manifest["content_text"],
+                                "observed_target_text": canonical_manifest["content_text"],
+                                "content_anchors": deepcopy(canonical_manifest["content_anchors"]),
+                                "content_verified": True,
+                                "verification_method": "text_anchor",
+                            },
+                            {
+                                "file": f"artifacts/screenshots/{attempt_after}",
+                                "sha256": screenshot_sha256,
+                                "case_id": case_id,
+                                "attempt": attempt_no,
+                                "phase": "after",
+                                "assertion_moment": "本次尝试完成最终断言后",
+                                "target": canonical_manifest["target"],
+                                "browser": "chromium",
+                                "headless": False,
+                                "evidence_scope": scope,
+                                "semantic_keys": deepcopy(canonical_manifest["semantic_keys"]),
+                                "content_text": canonical_manifest["content_text"],
+                                "observed_target_text": canonical_manifest["content_text"],
+                                "content_anchors": deepcopy(canonical_manifest["content_anchors"]),
+                                "content_verified": True,
+                                "verification_method": "text_anchor",
+                            },
+                        ],
+                    }
+                else:
+                    attempt["evidence"] = {
+                        "screenshots": [f"artifacts/screenshots/{attempt_name}"],
+                        "manifest": [
+                            {
+                                "file": f"artifacts/screenshots/{attempt_name}",
+                                "sha256": screenshot_sha256,
+                                "case_id": case_id,
+                                "attempt": attempt_no,
+                                "assertion_moment": "本次尝试完成最终断言后",
+                                "target": canonical_manifest["target"],
+                                "browser": "chromium",
+                                "headless": False,
+                                "evidence_scope": scope,
+                                "semantic_keys": deepcopy(canonical_manifest["semantic_keys"]),
+                                "content_text": canonical_manifest["content_text"],
+                                "observed_target_text": canonical_manifest["content_text"],
+                                "content_anchors": deepcopy(canonical_manifest["content_anchors"]),
+                                "content_verified": True,
+                                "verification_method": "text_anchor",
+                            }
+                        ],
+                    }
+                if isinstance(attempt.get("feedback_observation"), dict):
+                    attempt["feedback_observation"]["screenshot_path"] = attempt_name
 
     def configure_persistence_case(self, operation_type: str) -> dict[str, object]:
         case = self.case_document["test_cases"][2]
@@ -1473,6 +1686,8 @@ class WorkflowGateTests(unittest.TestCase):
         self.assertFalse(document["execution_meta"]["priority_gate"]["triggered"])
 
     def test_full_delivery_chain_generates_non_empty_workbooks(self) -> None:
+        self.case_document["case_source"]["requirement_source"] = "prd"
+        write_json(self.cases, self.case_document)
         result = self.create_case_gate()
         self.assertEqual(result.returncode, 0, result.stderr)
         result = self.create_plan_gate()
@@ -1587,6 +1802,9 @@ class WorkflowGateTests(unittest.TestCase):
         self.assertIn("最终交付门禁", report_text)
         self.assertIn("测试范围矩阵", report_text)
         self.assertIn("P2 单跑豁免用例", report_text)
+        self.assertIn("测试依据为本次提供的 PRD", report_text)
+        self.assertNotIn("营销路由", report_text)
+        self.assertNotIn("本轮没有正式 PRD", report_text)
         self.assertNotIn("通过项摘要", report_text)
         self.assertNotIn("失败与阻塞用例摘要", report_text)
         with zipfile.ZipFile(self.report_docx) as archive:
@@ -1622,6 +1840,46 @@ class WorkflowGateTests(unittest.TestCase):
         result = self.create_case_gate()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("exactly one assertion", result.stderr)
+
+    def test_case_gate_rejects_missing_atomic_contract(self) -> None:
+        document = json.loads(self.requirements.read_text(encoding="utf-8"))
+        document.pop("atomicity_contract_version")
+        write_json(self.requirements, document)
+        result = self.create_case_gate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("atomicity_contract_version", result.stderr)
+
+    def test_case_gate_rejects_atomic_rule_without_source_locator(self) -> None:
+        document = json.loads(self.requirements.read_text(encoding="utf-8"))
+        document["atomic_rules"][0].pop("source_locator")
+        write_json(self.requirements, document)
+        result = self.create_case_gate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("source_locator", result.stderr)
+
+    def test_case_gate_rejects_covered_rule_without_obligation(self) -> None:
+        document = json.loads(self.requirements.read_text(encoding="utf-8"))
+        document["coverage_obligations"] = []
+        write_json(self.requirements, document)
+        result = self.create_case_gate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Covered atomic rule without coverage obligation", result.stderr)
+
+    def test_case_gate_rejects_obligation_semantic_mismatch(self) -> None:
+        document = json.loads(self.requirements.read_text(encoding="utf-8"))
+        document["coverage_obligations"][1]["polarity"] = "positive"
+        write_json(self.requirements, document)
+        result = self.create_case_gate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("polarity does not match obligation", result.stderr)
+
+    def test_case_gate_rejects_missing_required_coverage_dimension(self) -> None:
+        document = json.loads(self.requirements.read_text(encoding="utf-8"))
+        document["atomic_rules"][0]["coverage_plan"]["required_dimensions"].append("boundary")
+        write_json(self.requirements, document)
+        result = self.create_case_gate()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("missing required coverage dimensions: boundary", result.stderr)
 
     def test_case_gate_rejects_missing_feature_group(self) -> None:
         self.case_document["test_cases"][0].pop("feature_group")
@@ -1929,6 +2187,13 @@ class WorkflowGateTests(unittest.TestCase):
                 "execution_trace": trace,
                 "observations": observations,
                 "produced_data": {"prompt_text": "请输入收件人", "mutation_committed": False},
+                "feedback_observation": {
+                    "presentation": "inline",
+                    "text": "请输入收件人",
+                    "appeared_after_ms": 1000,
+                    "auto_dismissed": True,
+                    "screenshot_path": "TC-002.png",
+                },
             }
 
         selected = rejected_attempt(1)
@@ -1948,6 +2213,7 @@ class WorkflowGateTests(unittest.TestCase):
                 },
                 "observations": selected["observations"],
                 "produced_data": selected["produced_data"],
+                "feedback_observation": selected["feedback_observation"],
                 "stability": "stable",
                 "retry_policy": {
                     "minimum_attempts": 2,
@@ -2419,6 +2685,24 @@ const {{ runWithQualityRetry }} = require({json.dumps(module_path)});
         scenario = self.case_document["test_cases"][0]
         scenario["operation_type"] = "edit"
         scenario.pop("persistence_verification", None)
+        scenario["change_evidence"] = {
+            "required": True,
+            "change_type": "edit",
+            "comparison_required": True,
+            "before_assertion": "提交前订单尚未保存，收件人字段保留输入值",
+            "after_assertion": "保存后重新打开同一订单，回显收件人新值",
+        }
+        state_observations = [
+            {"key": "before_state", "assertion_class": "hard", "source": "ui", "operator": "non_empty", "evidence_required": True},
+            {"key": "after_state", "assertion_class": "hard", "source": "ui", "operator": "non_empty", "evidence_required": True},
+            {"key": "changed", "assertion_class": "hard", "source": "runtime", "operator": "equals", "expected": True, "evidence_required": True},
+            {"key": "comparison_verified", "assertion_class": "hard", "source": "runtime", "operator": "equals", "expected": True, "evidence_required": True},
+        ]
+        scenario_contract = scenario["result_contract"]
+        scenario_contract["observations"].extend(state_observations)
+        state_keys = [item["key"] for item in state_observations]
+        scenario_contract["assertion_policy"]["hard_keys"].extend(state_keys)
+        scenario_contract["required_produced_keys"].extend(state_keys)
         write_json(self.cases, self.case_document)
 
         self.assertEqual(self.create_case_gate().returncode, 0)
@@ -2483,6 +2767,109 @@ const {{ runWithQualityRetry }} = require({json.dumps(module_path)});
         self.assertNotEqual(validation.returncode, 0)
         self.assertIn("headless does not match runtime", validation.stderr)
 
+    def test_resource_accounting_v1_is_enforced_and_bound_to_execution(self) -> None:
+        self.assertEqual(self.create_case_gate().returncode, 0)
+        self.create_execution_plan()
+        plan_document = json.loads(self.execution_plan.read_text(encoding="utf-8"))
+        plan_meta = plan_document["execution_meta"]
+        plan_meta["resource_accounting_version"] = "1.0"
+        plan_meta["resource_budget"]["estimated_model_tokens"] = None
+        write_json(self.execution_plan, plan_document)
+
+        invalid_plan = run(
+            VALIDATE_PLAN,
+            "--case-gate", self.case_gate,
+            "--final-cases", self.cases,
+            "--execution-plan", self.execution_plan,
+            "--output", self.plan_gate,
+        )
+        self.assertNotEqual(invalid_plan.returncode, 0)
+        self.assertIn("token_budget_policy must be a mapping", invalid_plan.stderr)
+
+        token_policy = {
+            "quality_constraints_may_not_be_reduced": True,
+            "checkpoint_on_overrun": True,
+        }
+        plan_document["execution_meta"]["resource_budget"]["token_budget_policy"] = token_policy
+        write_json(self.execution_plan, plan_document)
+        valid_plan = run(
+            VALIDATE_PLAN,
+            "--case-gate", self.case_gate,
+            "--final-cases", self.cases,
+            "--execution-plan", self.execution_plan,
+            "--output", self.plan_gate,
+        )
+        self.assertEqual(valid_plan.returncode, 0, valid_plan.stderr)
+
+        self.create_execution_results()
+        metrics_path = self.root / "20_workflow_run_metrics.json"
+        run_id = initialize_run(
+            metrics_path,
+            project_dir=self.root,
+            workflow_mode="full",
+            trigger="unit_test",
+        )
+        model_stage = start_stage(metrics_path, run_id=run_id, name="design", executor="model")
+        record_token_usage(
+            metrics_path,
+            run_id=run_id,
+            stage=model_stage,
+            source="provider_response",
+            input_tokens=100,
+            output_tokens=20,
+        )
+        finish_stage(
+            metrics_path,
+            run_id=run_id,
+            stage=model_stage,
+            status="completed",
+            token_coverage="exact",
+        )
+        browser_stage = start_stage(
+            metrics_path,
+            run_id=run_id,
+            name="browser_execution",
+            executor="deterministic",
+        )
+        finish_stage(metrics_path, run_id=run_id, stage=browser_stage, status="completed")
+        finalize_run(metrics_path, run_id=run_id, status="completed")
+
+        execution_document = json.loads(self.execution.read_text(encoding="utf-8"))
+        execution_meta = execution_document["execution_meta"]
+        execution_meta["resource_accounting_version"] = "1.0"
+        execution_meta["resource_budget"]["estimated_model_tokens"] = None
+        execution_meta["resource_budget"]["token_budget_policy"] = token_policy
+        execution_meta["workflow_run_metrics"] = {
+            "path": metrics_path.name,
+            "run_id": run_id,
+            "status": "completed",
+            "duration_seconds": 0,
+            "measurement_status": "exact",
+        }
+        write_json(self.execution, execution_document)
+
+        command = [
+            VALIDATE_EXECUTION,
+            "--phase", "execution",
+            "--case-gate", self.case_gate,
+            "--final-cases", self.cases,
+            "--execution-plan-gate", self.plan_gate,
+            "--execution-plan", self.execution_plan,
+            "--execution-results", self.execution,
+            "--screenshots-dir", self.screenshots,
+            "--run-metrics", metrics_path,
+            "--workflow-run-id", run_id,
+            "--output", self.execution_gate,
+        ]
+        valid_execution = run(*command)
+        self.assertEqual(valid_execution.returncode, 0, valid_execution.stderr)
+
+        execution_document["execution_meta"]["workflow_run_metrics"]["measurement_status"] = "unavailable"
+        write_json(self.execution, execution_document)
+        invalid_execution = run(*command)
+        self.assertNotEqual(invalid_execution.returncode, 0)
+        self.assertIn("measurement_status does not match", invalid_execution.stderr)
+
     def test_execution_gate_rejects_generic_navigation_anchor(self) -> None:
         self.assertEqual(self.create_case_gate().returncode, 0)
         self.assertEqual(self.create_plan_gate().returncode, 0)
@@ -2496,6 +2883,58 @@ const {{ runWithQualityRetry }} = require({json.dumps(module_path)});
         validation = self.validate_execution_results()
         self.assertNotEqual(validation.returncode, 0)
         self.assertIn("uses generic anchors", validation.stderr)
+
+    def test_require_resource_accounting_flag_hardens_legacy_artifacts(self) -> None:
+        """Resource accounting stays optional by default; --require-resource-accounting makes it mandatory."""
+        self.assertEqual(self.create_case_gate().returncode, 0)
+
+        legacy_plan = self.create_plan_gate()
+        self.assertEqual(legacy_plan.returncode, 0, legacy_plan.stderr)
+        plan_payload = json.loads(self.plan_gate.read_text(encoding="utf-8"))
+        self.assertEqual(plan_payload["status"], "pass")
+        self.assertFalse(plan_payload["resource_accounting"]["enforced"])
+        self.assertTrue(plan_payload["resource_accounting"]["legacy_mode"])
+        self.assertFalse(plan_payload["resource_accounting"]["required_by_cli"])
+        self.assertIn("pass --require-resource-accounting", "\n".join(plan_payload["warnings"]))
+
+        hardened_plan = run(
+            VALIDATE_PLAN,
+            "--case-gate", self.case_gate,
+            "--final-cases", self.cases,
+            "--execution-plan", self.execution_plan,
+            "--require-resource-accounting",
+            "--output", self.plan_gate,
+        )
+        self.assertNotEqual(hardened_plan.returncode, 0)
+        self.assertIn("--require-resource-accounting", hardened_plan.stderr)
+        hardened_payload = json.loads(self.plan_gate.read_text(encoding="utf-8"))
+        self.assertEqual(hardened_payload["status"], "fail")
+        self.assertTrue(hardened_payload["resource_accounting"]["required_by_cli"])
+        self.assertFalse(hardened_payload["resource_accounting"]["enforced"])
+
+        self.assertEqual(self.create_plan_gate().returncode, 0)
+        self.create_execution_results()
+        legacy_delivery = self.validate_execution_results()
+        self.assertEqual(legacy_delivery.returncode, 0, legacy_delivery.stderr)
+        delivery_payload = json.loads(self.execution_gate.read_text(encoding="utf-8"))
+        self.assertEqual(delivery_payload["status"], "pass")
+        self.assertFalse(delivery_payload["resource_accounting"]["enforced"])
+        self.assertTrue(delivery_payload["resource_accounting"]["legacy_mode"])
+
+        hardened_delivery = run(
+            VALIDATE_EXECUTION,
+            "--phase", "execution",
+            "--case-gate", self.case_gate,
+            "--final-cases", self.cases,
+            "--execution-plan-gate", self.plan_gate,
+            "--execution-plan", self.execution_plan,
+            "--execution-results", self.execution,
+            "--screenshots-dir", self.screenshots,
+            "--require-resource-accounting",
+            "--output", self.execution_gate,
+        )
+        self.assertNotEqual(hardened_delivery.returncode, 0)
+        self.assertIn("--require-resource-accounting", hardened_delivery.stderr)
 
 
 if __name__ == "__main__":

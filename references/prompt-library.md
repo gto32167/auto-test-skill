@@ -224,7 +224,7 @@
 - 每维 0-2 分，总分 22 分
 - 结论只能是 pass、pass_with_minor_comments、revise_required、reject
 - P0/P1/P2 判级理由和占比是独立硬要求，不计入 22 分；优先级专项或机器门禁失败即打回
-- 环境可执行性抽样不少于总用例 10%（向上取整），P0 抽样不少于 P0 总数 20%（向上取整）；每个抽样记录通道、证据、状态和修订动作
+- full 模式环境抽样不少于总用例 10% 和 P0 总数 20%（向上取整），记录通道、证据、状态和修订动作；generation_review 标记 not_applicable 并说明尚未执行
 - 任一用例获得 22/22 时，必须给出逐维可复核的满分依据
 
 输入：
@@ -307,3 +307,9 @@
 输出：
 [按 assets/templates/test-report-template.md 输出 23_正式测试报告.md（机器可审计源），并用 generate_test_report.py --output-docx 同步生成 23_正式测试报告.docx（正式交付版）]
 ```
+
+## V4 新项目补充约束
+
+PRD 生成/评审必须启用 `quality_contract_version: "1.0"` 与 `atomicity_contract_version: "1.0"`，形成原文条款 → 原子规则 → 覆盖义务 → 测试点 → 最终用例的一对一链；按当前 PRD 事实独立计算覆盖单位，保留 semantic_identity、title_contract、precondition_state 与真实独立评分。默认 risk_first_configurable，strict 比例仅在项目明确配置时强制。generation_review 不伪造环境抽样。已有 XLSX-only 规范化继续标记需求完整性未评估，不编造 PRD 条款。
+
+维护 `20_workflow_run_metrics.json`，新运行计划和执行/交付门禁都加 `--require-resource-accounting`；结果生成与报告使用 `--run-metrics` 和同一 `--workflow-run-id`。只登记精确 usage；无法取得时声明 unavailable。大量设计错误用 `--error-report`，历史迁移用 `--legacy-audit`，兼容 pass 不等于质量契约合规。读取 references/generation-quality-contract.md 和 references/resource-accounting.md 后执行本阶段。

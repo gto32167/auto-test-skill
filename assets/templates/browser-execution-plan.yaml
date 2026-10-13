@@ -1,12 +1,11 @@
 execution_meta:
-  # 出现 assisted/manual 用例时，先展示人工准备清单，再记录真实人工确认；禁止代填。
-  # preflight_acknowledgement:
-  #   confirmed_by: "实际确认人"
-  #   confirmed_at: "2026-10-08T14:00:00+08:00"
+  # assisted/manual cases require real human acknowledgement and item acceptance.
+  # preflight_acknowledgement: {confirmed_by: "实际确认人", confirmed_at: "实际确认时间"}
   final_cases_path: "06_final_test_cases.yaml"
   final_cases_sha256: "运行 validate_case_design.py 后填写最终用例 SHA-256"
   case_design_gate_path: "07_case_design_gate.json"
   semantic_contract_version: "2.0"
+  resource_accounting_version: "1.0"
   execution_mode: "qualification" # qualification=首次完整交付；risk_based_regression=有门禁基线的风险回归
   browser_runtime:
     browser: "chromium"
@@ -27,12 +26,17 @@ execution_meta:
   resource_budget:
     estimated_attempts: 6
     estimated_minutes: 30
+    # 无可靠历史数据时允许 null；不得用拍脑袋估算冒充实际 Token。
+    estimated_model_tokens: null
+    token_budget_policy:
+      quality_constraints_may_not_be_reduced: true
+      checkpoint_on_overrun: true
 
 browser_execution_plan:
   # 必须按 P0 -> P1 -> P2 稳定排序；同一优先级内保持最终用例原顺序。
   - execution_id: "EXE-001"
     readiness:
-      disposition: "run" # run / skip / manual
+      disposition: "run" # run / manual
       preparations: []
     case_id: "TC-001"
     semantic_contract_sha256: "从 07_case_design_gate.json 的 semantic_contracts.TC-001 复制"
@@ -100,7 +104,7 @@ browser_execution_plan:
 
   - execution_id: "EXE-002"
     readiness:
-      disposition: "run" # run / skip / manual
+      disposition: "run" # run / manual
       preparations: []
     case_id: "TC-003"
     semantic_contract_sha256: "从 07_case_design_gate.json 的 semantic_contracts.TC-003 复制"
@@ -185,7 +189,7 @@ browser_execution_plan:
 
   - execution_id: "EXE-003"
     readiness:
-      disposition: "run" # run / skip / manual
+      disposition: "run" # run / manual
       preparations: []
     case_id: "TC-002"
     semantic_contract_sha256: "从 07_case_design_gate.json 的 semantic_contracts.TC-002 复制"
@@ -222,7 +226,7 @@ browser_execution_plan:
         channel: "ui"
         semantic_action: "observe_persisted_outcome"
         browser_action: "按唯一商品标识重新查询并打开同一商品，读取商品名称回显值"
-    planned_observation_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed"]
+    planned_observation_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed", "before_state", "after_state", "changed", "comparison_verified"]
     estimated_minutes: 8
     execution_budget:
       minimum_attempts: 2
@@ -247,7 +251,7 @@ browser_execution_plan:
       nearest_container: "商品名称表单项"
     evidence_plan:
       screenshots: ["TC-002.png"]
-      semantic_keys: ["persisted_value"]
+      semantic_keys: ["persisted_value", "before_state", "after_state"]
       api_semantic_keys: ["object_id", "mutation_committed"]
       assertion_moment: "保存后重新打开同一商品并读取回显值"
       target: "重新打开后的商品名称表单项"
@@ -257,6 +261,14 @@ browser_execution_plan:
       screenshot_scope: "assertion_target_container"
       attempt_binding: "selected_attempt_only"
       capture_on_failure: true
+      # 变化类用例（change_evidence.required: true）必须声明 before_after 与
+      # 每个 attempt 的前后截图；canonical 截图从选中 attempt 的 after 图复制。
+      before_after: true
+      attempt_screenshots:
+        - "TC-002_A1_before.png"
+        - "TC-002_A1_after.png"
+        - "TC-002_A2_before.png"
+        - "TC-002_A2_after.png"
 
 blocked_cases: []
 

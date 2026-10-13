@@ -15,6 +15,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+FRAMEWORK_ROOT = Path(__file__).resolve().parents[2] / "builtin_framework"
+if str(FRAMEWORK_ROOT) not in sys.path:
+    sys.path.insert(0, str(FRAMEWORK_ROOT))
+
+from common.run_metrics import current_run, validate_metrics_document  # noqa: E402
+
 from semantic_contract import (
     evaluate_observation_results,
     has_observation_value,
@@ -689,10 +695,21 @@ def main() -> int:
     parser.add_argument("--execution-plan", required=True)
     parser.add_argument("--execution-results", required=True)
     parser.add_argument("--screenshots-dir", required=True)
+    parser.add_argument("--run-metrics", default="")
+    parser.add_argument("--workflow-run-id", default="")
     parser.add_argument("--phase", choices=("execution", "delivery"), default="delivery")
     parser.add_argument("--template-xlsx")
     parser.add_argument("--backfill-xlsx")
     parser.add_argument("--viewer-check", choices=("auto", "required", "skip"), default="auto")
+    parser.add_argument(
+        "--require-resource-accounting",
+        action="store_true",
+        help=(
+            "Hard-fail when execution_meta.resource_accounting_version is missing. "
+            "Artifacts written before the resource-accounting contract stay compatible by default; "
+            "new runs must pass this flag."
+        ),
+    )
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -729,6 +746,62 @@ def main() -> int:
 
     expected_case_hash = sha256_file(final_case_path)
     execution_meta = execution_doc.get("execution_meta") or {}
+    plan_meta = plan_doc.get("execution_meta") or {}
+    resource_accounting_version = text(execution_meta.get("resource_accounting_version"))
+    resource_accounting_enforced = resource_accounting_version == "1.0"
+    metrics_path = Path(args.run_metrics).resolve() if args.run_metrics else None
+    workflow_run = None
+    if resource_accounting_version:
+        if resource_accounting_version != "1.0":
+            errors.append("execution_meta.resource_accounting_version must be 1.0")
+        if resource_accounting_version != text(plan_meta.get("resource_accounting_version")):
+            errors.append("execution and plan resource_accounting_version must match")
+        if metrics_path is None:
+            errors.append("resource accounting 1.0 requires --run-metrics")
+        elif not metrics_path.is_file():
+            errors.append(f"workflow run metrics file does not exist: {metrics_path}")
+        else:
+            reference = execution_meta.get("workflow_run_metrics")
+            if not isinstance(reference, dict):
+                errors.append("execution_meta.workflow_run_metrics must be a mapping")
+                reference = {}
+            requested_run_id = args.workflow_run_id or text(reference.get("run_id"))
+            metric_errors = validate_metrics_document(metrics_path, requested_run_id or None)
+            errors.extend(f"workflow metrics: {error}" for error in metric_errors)
+            if not metric_errors:
+                workflow_run = current_run(metrics_path, requested_run_id or None)
+                token_usage = workflow_run.get("token_usage") or {}
+                measurement_status = text(token_usage.get("measurement_status"))
+                if measurement_status not in {"exact", "partial", "unavailable", "not_applicable"}:
+                    errors.append("workflow token measurement_status must be explicit")
+                if text(reference.get("run_id")) != text(workflow_run.get("run_id")):
+                    errors.append("execution_meta.workflow_run_metrics.run_id does not match the metrics file")
+                if text(reference.get("measurement_status")) != measurement_status:
+                    errors.append(
+                        "execution_meta.workflow_run_metrics.measurement_status does not match the metrics file"
+                    )
+                if Path(text(reference.get("path"))).name != metrics_path.name:
+                    errors.append("execution_meta.workflow_run_metrics.path does not match --run-metrics")
+                browser_stages = [
+                    stage
+                    for stage in workflow_run.get("stages") or []
+                    if isinstance(stage, dict) and stage.get("name") == "browser_execution"
+                ]
+                if not browser_stages or any(stage.get("status") == "running" for stage in browser_stages):
+                    errors.append("workflow metrics must contain a finished browser_execution stage")
+                if args.phase == "delivery" and workflow_run.get("status") == "running":
+                    errors.append("delivery phase requires the workflow run to be finalized")
+    elif args.require_resource_accounting:
+        errors.append(
+            "execution results execution_meta.resource_accounting_version is missing; "
+            "passing --require-resource-accounting makes the resource-accounting 1.0 contract mandatory "
+            "(declare resource_accounting_version: \"1.0\" and bind execution_meta.workflow_run_metrics)"
+        )
+    else:
+        warnings.append(
+            "legacy execution results have no resource_accounting_version; duration/token accounting is not enforced "
+            "(pass --require-resource-accounting to make it mandatory)"
+        )
     evidence_manifest_v2 = text(execution_meta.get("evidence_manifest_version")) == "2.0"
     browser_runtime = execution_meta.get("browser_runtime") or {}
     runtime_headless = browser_runtime.get("headless") if isinstance(browser_runtime, dict) else None
@@ -753,7 +826,6 @@ def main() -> int:
         errors.append("execution_meta.execution_plan_sha256 is missing or does not match the gated execution plan")
     if text(execution_meta.get("retry_policy_version")) != "3.0":
         errors.append("execution_meta.retry_policy_version must be 3.0")
-    plan_meta = plan_doc.get("execution_meta") or {}
     errors.extend(validate_preflight(cases, plans, plan_meta))
     execution_mode = text(execution_meta.get("execution_mode")).lower()
     if execution_mode != text(plan_meta.get("execution_mode")).lower():
@@ -790,6 +862,11 @@ def main() -> int:
         for field in ("estimated_attempts", "estimated_minutes", "actual_attempts", "actual_minutes"):
             if not isinstance(resource_budget.get(field), (int, float)) or resource_budget.get(field) < 0:
                 errors.append(f"execution_meta.resource_budget.{field} must be a non-negative number")
+        if resource_accounting_version:
+            plan_budget = plan_meta.get("resource_budget") or {}
+            for field in ("estimated_model_tokens", "token_budget_policy"):
+                if resource_budget.get(field) != plan_budget.get(field):
+                    errors.append(f"execution_meta.resource_budget.{field} must match the gated plan")
 
     case_ids = [text(case.get("case_id")) for case in cases]
     result_ids = [text(item.get("case_id")) for item in results]
@@ -830,8 +907,11 @@ def main() -> int:
         if text(item.get("semantic_contract_sha256")) != expected_semantic_hash:
             errors.append(f"Case {case_id} result has a stale or missing semantic contract hash")
         route = disposition(plan)
+        if route == "skip":
+            errors.append(f"Case {case_id} uses removed preflight disposition skip; complete preparation or use manual")
+            continue
         if route == "run" and text(item.get("not_run_reason")) in NON_RUN_REASONS.values():
-            errors.append(f"Case {case_id} cannot claim human transfer/skip without the gated preflight decision")
+            errors.append(f"Case {case_id} cannot claim manual transfer without the gated preflight decision")
         if route in NON_RUN_REASONS:
             if status != "not_run" or text(item.get("not_run_reason")) != NON_RUN_REASONS[route]:
                 errors.append(f"Case {case_id} preflight {route} must remain not_run/{NON_RUN_REASONS[route]}")
@@ -1184,12 +1264,27 @@ def main() -> int:
             "execution_plan_gate": source_record(plan_gate_path),
             "execution_plan": source_record(execution_plan_path),
             "execution_results": source_record(execution_path),
+            **(
+                {"workflow_run_metrics": source_record(metrics_path)}
+                if metrics_path is not None and metrics_path.is_file()
+                else {}
+            ),
         },
         "counts": expected_summary,
         "priority_gate": calculated_priority_gate,
         "semantic_evaluations": semantic_evaluations,
         "artifacts": artifacts,
         "viewer_checks": viewer_results,
+        "resource_accounting": {
+            "version": resource_accounting_version,
+            "enforced": resource_accounting_enforced,
+            "legacy_mode": not resource_accounting_enforced,
+            "required_by_cli": bool(args.require_resource_accounting),
+            "run_id": text((workflow_run or {}).get("run_id")),
+            "run_status": text((workflow_run or {}).get("status")),
+            "duration_seconds": (workflow_run or {}).get("duration_seconds"),
+            "token_usage": (workflow_run or {}).get("token_usage") or {},
+        },
         "errors": errors,
         "warnings": warnings,
     }

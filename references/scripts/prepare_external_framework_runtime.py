@@ -18,6 +18,7 @@ ESSENTIAL_FILES = [
     "conftest.py",
     "pytest.ini",
     "requirements.txt",
+    "run_tests.py",
 ]
 
 
@@ -76,6 +77,10 @@ def main() -> None:
     (runtime_workspace / "allure-results").mkdir(parents=True, exist_ok=True)
 
     runtime_config = build_runtime_config(binding)
+    runtime_paths = runtime_config.setdefault("paths", {})
+    project_dir = binding_path.parent
+    runtime_paths["workflow_metrics"] = str(project_dir / "20_workflow_run_metrics.json")
+    runtime_paths["workflow_project_dir"] = str(project_dir)
     dump_yaml(runtime_workspace / "config.yaml", runtime_config)
 
     report = {
@@ -85,6 +90,7 @@ def main() -> None:
         "copied_dirs": ESSENTIAL_DIRS,
         "copied_files": ESSENTIAL_FILES,
         "config_path": str(runtime_workspace / "config.yaml"),
+        "workflow_metrics_path": str(project_dir / "20_workflow_run_metrics.json"),
     }
     dump_yaml(runtime_workspace / "prepare_report.yaml", report)
     print(f"Prepared runtime workspace: {runtime_workspace}")

@@ -29,7 +29,6 @@ def explain_result(item: dict[str, Any], expected: str = "") -> tuple[str, str]:
     if status == "not_run":
         reasons = {
             "manual_execution_required": ("这条用例需要人亲自操作，本轮自动化没有执行。", "按人工操作清单执行，并单独记录人工测试结果。"),
-            "human_preflight_skip": ("测试人员已在执行前标记跳过，本轮没有执行这条用例。", "按准备清单补齐数据或条件，确认后再安排测试。"),
             "p0_all_failed_stop_gate": ("核心用例全部失败，本轮后续用例已停止，尚未执行。", "先修复核心问题，再重新执行后续用例。"),
             "script_status_missing": ("没有找到这条用例的执行记录，暂时无法判断测试结果。", "检查脚本映射和执行日志，补跑这条用例。"),
         }

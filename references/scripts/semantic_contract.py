@@ -289,6 +289,14 @@ def validate_case_semantics(
         errors.append(f"Case {case_id} UI result contract must require a screenshot")
 
     change = case.get("change_evidence") or {}
+    # Require before/after evidence for declared mutation operations. Reading
+    # a status field alone is not a state transition.
+    operation = lower_text(case.get("operation_type"))
+    inferred_change = operation in {
+        "edit", "delete", "batch", "submit", "state_transition", "persisted_validation", "change",
+    }
+    if inferred_change and not (isinstance(change, dict) and change.get("required") is True):
+        errors.append(f"Case {case_id} state-changing intent requires change_evidence.required: true")
     if isinstance(change, dict) and change.get("required") is True:
         if text(change.get("change_type")) not in {"edit", "delete", "change", "state_transition"}:
             errors.append(f"Case {case_id} change_evidence.change_type must be edit/delete/change/state_transition")

@@ -1,3 +1,42 @@
+atomicity_contract_version: "1.0"
+# 生成质量契约总开关（规范名）。case_count_contract_version 是历史别名，
+# 仍然接受，但新项目只声明 quality_contract_version 即可启用全套契约。
+quality_contract_version: "1.0"
+
+# 以下确认信息仅为模板示例；项目使用前必须实际确认并替换。
+generation_scope:
+  mode: generation_review
+  granularity: l2_plus_l3
+  coverage_depth: standard
+  source_policy: current_prd_only
+  historical_case_reuse: forbidden
+  estimated_case_range: {min: 1, max: 20}
+  confirmed: true
+  confirmed_by: "待填写：确认人（业务/产品负责人）"
+  confirmed_at: "2026-01-01"
+
+# 门禁会根据 coverage_characteristics 独立重算最低用例数；不要填写或信任
+# calculated_minimum。每个覆盖单位必须在义务、测试点和最终用例中一对一落地。
+source_coverage_inventory:
+  normative_statement_count: 1
+  mapped_statement_count: 1
+  excluded_statement_count: 0
+  pending_statement_count: 0
+  unmapped_statement_ids: []
+
+normative_statements:
+  - statement_id: "NS-001"
+    source_document: "PRD-001"
+    source_locator: {section: "3.1 产品方案", anchor: "商品名称为必填项"}
+    source_excerpt: "用户填写商品名称并保存；商品名称为必填项。"
+    statement_type: "field"
+    disposition: "covered"
+    atomic_rule_ids: ["RULE-001"]
+
+source_documents:
+  - document_id: "PRD-001"
+    path: "01_需求原文.docx"
+
 requirements:
   - requirement_id: "REQ-001"
     title: "创建商品"
@@ -5,7 +44,100 @@ requirements:
     disposition: "covered"
     notes: ""
 
+atomic_rules:
+  - rule_id: "RULE-001"
+    requirement_id: "REQ-001"
+    source_document: "PRD-001"
+    source_locator: {section: "3.1 产品方案", anchor: "商品名称为必填项"}
+    source_excerpt: "用户填写商品名称并保存；商品名称为必填项。"
+    normative_statement_id: "NS-001"
+    source_fact_refs: ["NS-001"]
+    applicability_reason:
+      input: "原文明确描述商品名称输入和必填约束"
+      enum: "原文未声明枚举选项"
+      comparison: "原文未声明比较阈值"
+      long_flow: "原文不构成长流程"
+      state: "原文未声明状态迁移"
+      permission: "原文未声明角色权限"
+      query: "原文未声明查询条件"
+      batch: "原文未声明批量规则"
+      file: "原文未声明文件契约"
+      calculation: "原文未声明计算公式"
+      time: "原文未声明时间约束"
+      api: "原文未声明接口契约"
+      compatibility: "原文未声明跨端要求"
+    unsupported_dimensions: [enum, comparison, long_flow, state, permission, query, batch, file, calculation, time, api, compatibility]
+    rule_type: "field"
+    statement: "商品名称接受合法值，空值时拒绝保存"
+    coverage_plan:
+      required_design_methods: ["scenario", "equivalence_partitioning"]
+      required_dimensions: ["positive", "negative"]
+      required_classes: ["main_flow", "valid", "empty"]
+    coverage_characteristics:
+      profile: text_input
+      applicability:
+        input: true
+        enum: false
+        comparison: false
+        long_flow: false
+        state: false
+        permission: false
+        query: false
+        batch: false
+        file: false
+        calculation: false
+        time: false
+        api: false
+        compatibility: false
+      required: true
+      valid_partitions: [valid, main_flow]
+      invalid_partitions: [empty]
+    disposition: "covered"
+
+coverage_obligations:
+  - obligation_id: "OB-001"
+    rule_id: "RULE-001"
+    test_point_id: "TP-001"
+    design_method: "scenario"
+    coverage_dimension: "positive"
+    coverage_class: "main_flow"
+    verification_target: "合法数据提交后商品保存成功"
+    polarity: "positive"
+    interface: "ui"
+    expected_outcome: "committed"
+    coverage_unit_signature: "RULE-001|positive|valid|main_flow|accepted"
+    source_fact_refs: ["NS-001"]
+  - obligation_id: "OB-002"
+    rule_id: "RULE-001"
+    test_point_id: "TP-002"
+    design_method: "equivalence_partitioning"
+    coverage_dimension: "positive"
+    coverage_class: "valid"
+    verification_target: "商品名称保存后回显合法值"
+    polarity: "positive"
+    interface: "ui"
+    expected_outcome: "accepted"
+    field_id: "goods.name"
+    coverage_unit_signature: "RULE-001|positive|valid|valid|accepted"
+    source_fact_refs: ["NS-001"]
+  - obligation_id: "OB-003"
+    rule_id: "RULE-001"
+    test_point_id: "TP-003"
+    design_method: "equivalence_partitioning"
+    coverage_dimension: "negative"
+    coverage_class: "empty"
+    verification_target: "商品名称为空时显示必填提示"
+    polarity: "negative"
+    interface: "ui"
+    expected_outcome: "rejected"
+    field_id: "goods.name"
+    coverage_unit_signature: "RULE-001|negative|invalid|empty|rejected"
+    source_fact_refs: ["NS-001"]
+
 # disposition 只允许：
 # - covered：必须继续拆测试点
 # - explicitly_not_tested：明确不测，必须写 notes
 # - pending_confirmation：需求待确认，必须写 notes
+
+version_differences: []
+ambiguities: []

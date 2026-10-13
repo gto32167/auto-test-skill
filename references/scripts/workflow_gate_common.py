@@ -9,7 +9,7 @@ import yaml
 
 
 def load_yaml(path: Path) -> dict[str, Any]:
-    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    data = yaml.load(path.read_text(encoding="utf-8"), Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))
     if not isinstance(data, dict):
         raise ValueError(f"{path} must contain a YAML mapping at the root")
     return data

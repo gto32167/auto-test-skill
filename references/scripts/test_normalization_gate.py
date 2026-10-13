@@ -53,9 +53,17 @@ class 规范化来源门禁测试(unittest.TestCase):
         self.imported = self.root / "03_existing_cases_import.yaml"
         self.gate = self.root / "07_case_design_gate.json"
 
-        写入_yaml(self.requirements, 读取模板("requirements.yaml"))
+        requirement_document = 读取模板("requirements.yaml")
+        requirement_document["generation_scope"].update({"source_policy": "current_xlsx_baseline", "historical_case_reuse": "supplied_baseline_only"})
+        requirement_document["source_documents"] = [{"document_id": "XLSX-001", "source_type": "existing_xlsx_baseline", "path": "已有用例.xlsx", "sha256": "a" * 64}]
+        for fact in [*requirement_document["normative_statements"], *requirement_document["atomic_rules"]]:
+            fact["source_document"] = "XLSX-001"
+            fact["source_locator"] = {"sheet": "用例", "row": 2}
+        写入_yaml(self.requirements, requirement_document)
         写入_yaml(self.points, 读取模板("coverage-matrix.yaml"))
         case_document = 读取模板("test-cases.yaml")
+        case_document["case_ordering"]["source"] = "已有用例.xlsx"
+        case_document["review_audit"]["reviewer_independence"]["source_artifacts"] = ["current_xlsx_baseline", "normative_statements"]
         case_document["case_source"].update(
             {
                 "generation_mode": "case_normalization",
@@ -86,6 +94,7 @@ class 规范化来源门禁测试(unittest.TestCase):
                 "import_meta": {
                     "artifact_role": "existing_case_import",
                     "mode": "case_normalization",
+                    "sheet": "用例",
                     "source": {"path": "E:\\cases\\已有用例.xlsx", "sha256": "a" * 64},
                 },
                 "imported_cases": imported_cases,
@@ -132,6 +141,23 @@ class 规范化来源门禁测试(unittest.TestCase):
         result = self.运行门禁(include_import=False)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("requires --existing-case-import", result.stderr)
+
+    def test_基线不能伪称_PRD_来源(self) -> None:
+        document = 读取模板("requirements.yaml")
+        写入_yaml(self.requirements, document)
+        result = self.运行门禁()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("source_policy must be current_xlsx_baseline", result.stderr)
+
+    def test_基线条款哈希和源行必须匹配导入账本(self) -> None:
+        document = yaml.safe_load(self.requirements.read_text(encoding="utf-8"))
+        document["source_documents"][0]["sha256"] = "b" * 64
+        document["normative_statements"][0]["source_locator"]["row"] = 999
+        写入_yaml(self.requirements, document)
+        result = self.运行门禁()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("imported workbook sha256", result.stderr)
+        self.assertIn("real imported sheet and row", result.stderr)
 
     def test_引用不存在源行时拒绝(self) -> None:
         """验证最终用例不得绑定导入产物中不存在的行。"""

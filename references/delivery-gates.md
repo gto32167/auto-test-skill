@@ -2,15 +2,16 @@
 
 ## 人工准备门禁
 
-设计门禁强制每条用例的执行分级，计划门禁在自动化之前强制人工清单确认、逐项准备验收或明确人工跳过。计划校验同时生成 `10_执行前人工准备清单.md`，可用 `--preflight-report` 自定义路径。人工/跳过用例只需保留 ID、语义哈希和真实安排，不需伪造执行器步骤；自动 attempts/分钟预算只统计 run。执行门禁校验人工/跳过用例为 not_run 且无 attempts/证据/产出。交付表必须包含执行级别和人工准备列，回填另含原因说明（给测试人员）、建议下一步、技术原因（给Agent）。详见 [human-readiness.md](human-readiness.md)。
+设计门禁强制每条用例的执行分级，计划门禁在自动化之前强制人工清单确认、逐项准备验收；准备未完成时停止批次。计划校验同时生成 `10_执行前人工准备清单.md`，可用 `--preflight-report` 自定义路径。人工用例只需保留 ID、语义哈希和真实移交安排，不需伪造执行器步骤；自动 attempts/分钟预算只统计 run。执行门禁校验人工用例为 not_run 且无 attempts/证据/产出。交付表必须包含执行级别和人工准备列，回填另含原因说明（给测试人员）、建议下一步、技术原因（给Agent）。详见 [human-readiness.md](human-readiness.md)。
 
 ## 目标
 
-把用例完整性、执行语义一致性、结果证据和 XLSX 可读性从文字要求变成可重复执行的硬校验。完整测试交付默认使用 `full` 模式；同时支持分段交付：可从 PRD 生成用例、从已有 XLSX 规范化用例并在模板版 Excel 处停止，也可直接执行已有的已门禁最终用例并继续回填/报告。除非用户明确要求仅冒烟，否则不得只生成或执行场景级用例。
+把用例完整性、执行语义一致性、结果证据和 XLSX 可读性从文字要求变成可重复执行的硬校验。完整测试交付默认使用 `full` 模式；同时支持分段交付：可只生成/评审用例并在模板版 Excel 处停止，也可直接执行已有的最终用例并继续回填/报告。生成/评审阶段必须先写入并确认 `generation_scope`；除显式 `l2_only` 外不得跳过数量契约。除非用户明确要求仅冒烟，否则不得只生成或执行场景级用例。
 
 ## 阶段级入口
 
-- 已有用例规范化入口：`已有测试用例.xlsx` -> `03_existing_cases_import.yaml` / `03_existing_cases_import_report.json` -> `05_requirements.yaml` -> `05_test_points.yaml` -> `06_final_test_cases.yaml` -> `07_case_design_gate.json` -> 评审文档 -> `08_测试用例_模板版.xlsx`
+- Excel 规范化入口：已有 XLSX → `03_existing_cases_import.yaml` + 导入审计 → 来源条款与原子规则 → 下方生成/评审链；导入通过不等于设计通过。
+
 - 生成/评审入口：`05_requirements.yaml` -> `05_test_points.yaml` -> `06_final_test_cases.yaml` -> `07_case_design_gate.json` -> `test_case_review.md` / `test_case_review_scores.md` -> `08_测试用例_模板版.xlsx`
 - 执行入口：已通过门禁的 `06_final_test_cases.yaml` -> `10_browser_execution_plan.yaml` -> `10_execution_plan_gate.json` -> `11_test_execution_results.yaml` -> `12_execution_gate.json` -> `18_测试用例_执行回填版.xlsx` -> `19_delivery_gate.json` -> `23_正式测试报告.md` + `23_正式测试报告.docx`
 
@@ -21,8 +22,8 @@
 项目目录使用以下角色明确的文件名：
 
 ```text
-03_existing_cases_import.yaml      # 仅规范化模式，已有 Excel 的可追溯导入结果
-03_existing_cases_import_report.json # 仅规范化模式，机械导入状态与问题统计
+03_existing_cases_import.yaml   # Excel 入口的机械导入，仅分析输入
+03_existing_cases_import_report.json # 导入审计
 04_scenario_cases.yaml          # L2 场景初稿，仅供设计，禁止执行和交付
 05_requirements.yaml            # 原始需求条目及处理状态
 05_test_points.yaml             # 全量测试点 + 字段覆盖清单
@@ -45,10 +46,8 @@
 case_source:
   artifact_role: final
   mode: full
-  priority_policy: strict_p0_p1_p2
+  priority_policy: risk_first_configurable
 ```
-
-`03_existing_cases_import.yaml` 与其报告也不能伪装为最终用例或设计门禁。已有 Excel 的导入和规范化流程见 [existing-case-normalization.md](existing-case-normalization.md)。
 
 ## 已有 XLSX 导入门槛
 
@@ -91,7 +90,22 @@ py references/scripts/validate_case_design.py `
   --output <项目目录>/07_case_design_gate.json
 ```
 
+可选参数：
+
+- `--error-report <path>`：把按类别聚合的错误报告写成 Markdown（错误很多时的推荐读法）。
+- `--verbose-errors`：无论错误多少都打印全部原始错误。
+- `--legacy-audit`：**仅用于存量产物迁移审计**。缺少质量契约字段时不阻断，改为输出"合规差距报告"。该模式下 `quality_contract.enforced = false`、`status` 仍可能是 pass，因此**不能视为契约合规**，补齐后必须去掉该参数重新门禁。
+
 通过条件：
+
+- `05_requirements.yaml.atomicity_contract_version` 必须为 `1.0`，并具有非空 `source_documents`、`atomic_rules`、`coverage_obligations`。
+- `full`/`generation_review` 必须声明 `quality_contract_version: "1.0"`（`case_count_contract_version` 为同义历史别名，两处不一致直接失败）；**未声明即失败**，只有显式 `l2_only` 可豁免。门禁必须独立按 PRD-backed `coverage_characteristics` 计算 `N_min = Σ|U_i|`，并要求每个覆盖单位的签名在义务、测试点、最终用例中一对一存在。`actual_cases < calculated_minimum_cases`、任一规则低于下限、缺少/多余签名、未逐项声明 applicability、单位缺少 `source_fact_refs` 均阻断交付；不得信任 `calculated_minimum` 字段或以重复模板凑数。存在 `covered` 规则时 `N_min = 0` 也判失败。
+- `generation_scope` 必须带确认留痕：`confirmed: true` 之外还要有 `confirmed_by` 与 `confirmed_at`（ISO 8601）；`estimated_case_range` 上限低于门禁算出的 `N_min`、或最终用例数落在区间外，都会产生告警并要求在评审里解释。
+- 每条原子规则必须可通过文档、章节/页码/行/锚点及原文摘录反向定位；规则类型合法，covered 规则均至少有覆盖义务。
+- 需求账本必须包含 `normative_statements`，并对账总数、已映射数、排除数和待确认数；多份递进 PRD 必须有相邻版本 `version_differences`，歧义项不得静默覆盖。
+- 每条原子规则必须声明 `normative_statement_id`、`source_fact_refs`、`applicability_reason` 和 `unsupported_dimensions`；覆盖维度与 profile 不适用时阻断。
+- 每项覆盖义务只引用一个原子规则，显式声明合法设计方法、覆盖方位、覆盖类别、验证目标、正负向、接口和预期结果。
+- 覆盖义务、测试点、最终用例严格一对一，三者的语义字段和唯一验证目标一致；任意压缩、漏映射或一例多点均失败。
 
 - 所有需求都有合法处理状态；标记 `covered` 的需求至少关联一个测试点。
 - 测试点 ID 唯一，每个测试点关联有效需求 ID。
@@ -99,13 +113,15 @@ py references/scripts/validate_case_design.py `
 - 测试点与最终用例严格一对一，`final_case_count == test_point_count`。
 - 每个测试点和最终用例必须声明相同的非空 `feature_group`；最终源必须声明 `case_ordering.policy: prd_port_page_group` 和非空 `group_sequence`。
 - 实际功能集合顺序必须与 `group_sequence` 一致，同一集合必须连续，测试点与最终用例的行顺序及功能集合必须一致。
-- `coverage_profile.priority_policy` 与 `case_source.priority_policy` 都必须为 `strict_p0_p1_p2`。
+- 默认优先级策略为 `risk_first_configurable`；仅显式声明 `strict_p0_p1_p2` 时才将比例作为硬门禁，禁止为了配额机械改级。
 - 每个测试点和最终用例只能使用 P0/P1/P2，必须填写非空 `priority_rationale`，且一对一映射的等级和理由完全一致。
-- 必须先按业务风险判级，再满足全量组合：P0 为 20%～25%，P1 为 35%～40%，P2 为 35%～40%；禁止随机改级凑比例。20 条及以上严格按比例换算整数上下限，少于 20 条只接受单条用例造成的取整误差，且三档仍必须全部存在。
-- `07_case_design_gate.json.priority_policy.status` 必须为 `pass`；等级缺失、占比越界、理由缺失或测试点/最终用例不一致时，门禁失败。
+- 必须先按业务风险判级。默认 `risk_first_configurable` 下 P0/P1/P2 比例只作组合告警；只有显式 `strict_p0_p1_p2` 时才按 20%～25% / 35%～40% / 35%～40% 作为硬门禁。任何策略都禁止随机改级凑比例，三档缺失仍需在评审中解释。
+- `07_case_design_gate.json.priority_policy.status` 必须为 `pass`；理由缺失、测试点/最终用例不一致或 strict 策略占比越界时门禁失败；risk-first 比例偏差只产生告警。
 - `result_contract.assertion_policy` 必须完整划分硬/软断言；精确 UI 文案硬断言必须有 `prd_exact: true`，拒绝类 `mutation_committed=false` 必须为硬断言。
-- `review_audit` 必须抽样探测至少 10% 总用例和 20% P0 用例的环境可执行性，保留通道、证据和修订动作；全部 22/22 时必须提供满分依据。
-- 最终用例数大于需求条目数；该条件是关系约束，不使用固定的 29、100 或 102 作为通用阈值。
+- `review_audit` 必须声明独立评审、语义重复审计和逐用例证据评分。`full` 模式抽样探测至少 10% 总用例和 20% P0 用例；`generation_review` 模式将环境抽样标记为 `not_applicable`，不得伪造执行证据。全部 22/22 时必须提供满分依据。
+- 每条最终用例必须声明 `title_contract` 和 `semantic_identity`；标题禁用“符合预期/正常验证/同样处理”等弱表达，语义身份重复时必须合并或提供保留理由。
+- 每条最终用例必须声明 `precondition_state`；`self_built` 必须有独立 `data_setup`，系统预置/环境提供必须写来源和数据缺失后的 `blocked` 行为。正式业务步骤不得混入造数命令。
+- 启用质量契约时依据独立计算的 N_min 和完整覆盖签名，不人为要求用例数大于需求条目数。该旧关系检查仅保留在存量兼容审计；不得使用固定项目数量作为通用阈值。
 - 每条用例恰好一个主断言。
 - 全量模式包含场景级用例；存在核心表单时必须同时包含字段级用例。
 - `field_coverage.required_classes` 中声明的每个字段覆盖类别都有对应字段测试点。
@@ -121,7 +137,7 @@ py references/scripts/validate_case_design.py `
 
 ## 模板版生成
 
-未提供用户模板时，脚本生成方案默认 7 列模板：`用例ID / 功能集合 / 用例名称 / 优先级 / 前置条件 / 执行步骤 / 预期结果`。提供模板时保留用户模板作为底稿，并把 `feature_group` 写入用户模板的等价模块/页面列：
+未提供用户模板时，默认 10 列模板：`用例ID / 功能集合 / 用例名称 / 优先级 / 执行级别 / 人工介入说明 / 人工准备清单 / 前置条件 / 执行步骤 / 预期结果`。提供模板时保留用户模板作为底稿，并把 `feature_group` 写入用户模板的等价模块/页面列：
 
 ```powershell
 py references/scripts/generate_case_xlsx.py `
@@ -144,13 +160,16 @@ py references/scripts/generate_case_xlsx.py `
 
 ## 执行计划门禁
 
-执行计划必须逐条复制设计门禁中的语义哈希，并明确 profile、执行器能力、主通道、意图快照、前置步骤、核心步骤和计划观察键。计划还必须固定 `qualification` 或 `risk_based_regression` 模式、输入 SHA-256、attempt/分钟预算、每条用例执行预算、UI/API 分离证据计划、blocked 前能力探测、状态等待策略和 UI 字段控件审计。计划条目必须对最终用例做稳定优先级排序：全部 P0、全部 P1、全部 P2，同一优先级内保持最终用例原顺序，并在 `execution_meta.priority_execution_policy` 声明版本、顺序、P0 完成后评估、全部 P0 最终均为 failed 才触发、任一 P0 为 passed 或 blocked 则继续，以及 `not_run` 原因码。生成计划后、执行任何用例前运行：
+出厂模板：`assets/templates/browser-execution-plan.yaml`（计划）与 `assets/templates/test-execution-results.yaml`（结果）。两者已声明 `resource_accounting_version: "1.0"` 与 `token_budget_policy`，直接复制即满足资源核算契约，无需再从零补字段。
+
+执行计划必须逐条复制设计门禁中的语义哈希，并明确 profile、执行器能力、主通道、意图快照、前置步骤、核心步骤和计划观察键。计划还必须固定 `qualification` 或 `risk_based_regression` 模式、输入 SHA-256、attempt/分钟预算、Token 预算策略、每条用例执行预算、UI/API 分离证据计划、blocked 前能力探测、状态等待策略和 UI 字段控件审计。新版计划声明 `resource_accounting_version: "1.0"`；`estimated_model_tokens` 没有可靠历史基线时填 `null`，但 `quality_constraints_may_not_be_reduced` 与 `checkpoint_on_overrun` 必须为 true。计划条目必须对最终用例做稳定优先级排序：全部 P0、全部 P1、全部 P2，同一优先级内保持最终用例原顺序，并在 `execution_meta.priority_execution_policy` 声明版本、顺序、P0 完成后评估、全部 P0 最终均为 failed 才触发、任一 P0 为 passed 或 blocked 则继续，以及 `not_run` 原因码。生成计划后、执行任何用例前运行。新项目必须追加 `--require-resource-accounting`：缺少 `resource_accounting_version` 会直接失败；资源核算契约之前产出的历史计划不带该开关仍按兼容方式通过，并在载荷里以 `resource_accounting.enforced=false` 与 `legacy_mode=true` 留痕——兼容通过不等于契约合规。
 
 ```powershell
 py references/scripts/validate_execution_plan.py `
   --case-gate <项目目录>/07_case_design_gate.json `
   --final-cases <项目目录>/06_final_test_cases.yaml `
   --execution-plan <项目目录>/10_browser_execution_plan.yaml `
+  --require-resource-accounting `
   --output <项目目录>/10_execution_plan_gate.json
 ```
 
@@ -166,6 +185,17 @@ py references/scripts/validate_execution_plan.py `
 4. 全部 P0 最终均失败时，未启动的 P1/P2 全部回填 `status: not_run`、`stability: not_run`、`not_run_reason: p0_all_failed_stop_gate`、`attempts: []`，不生成伪证据或业务结果。
 5. 停止后仍运行执行结果门禁、回填、交付门禁并生成 Markdown/Word 正式报告。规则执行正确时，执行结果门禁可以为 `pass`；这只表示停止轨迹和交付物可信，不代表产品通过。
 6. P0 失败后若 P1/P2 已有 attempts，属于顺序违规，执行门禁失败，必须按正确批次重跑；禁止删除真实轨迹掩盖违规。
+
+### 试点用例检查点（2026-09-17）
+
+计划门禁通过、环境门禁就绪后、正式批量执行前，先在独立试点轮执行 P0 批次中成本最低的一条（步骤最少、前置构造最简单），正式资格轮仍保持门禁计划的稳定 P0→P1→P2 顺序，按重试策略 3.0 完成它的最终裁决并保留全套证据：
+
+- 试点用例最终为 `passed` 或 `failed`：保留试点日志，正式资格轮按门禁计划顺序执行。试点结果不得直接覆盖资格轮结果。
+- 试点用例最终为 `blocked`：先修复阻塞（环境、登录态、权限、造数通道、数据工厂），用带时间戳的新探测重验证后重跑试点；试点未形成最终裁决前不得启动其余 P0。`blocker_type` 与探测日志照常记录。
+- 试点有独立轮次与预算；修复后保留旧尝试并建立新轮，禁止删除或改写历史尝试。
+- 试点选择依据写入执行计划 `execution_meta.pilot_case_policy`（`enabled: true`、`selection: cheapest_p0`、`selection_reason`）；计划门禁不强制该字段，但执行说明应记录选择理由。
+
+试点的作用是把环境、路由和造数通道的系统性故障发现点从"烧完 P0 批次"提前到第一条用例，避免整批 attempt 预算浪费在同类阻塞上。
 
 ## 执行结果门禁
 
@@ -189,6 +219,8 @@ py references/scripts/generate_case_execution_results.py `
   --case-gate <项目目录>/07_case_design_gate.json `
   --execution-plan <项目目录>/10_browser_execution_plan.yaml `
   --execution-plan-gate <项目目录>/10_execution_plan_gate.json `
+  --run-metrics <项目目录>/20_workflow_run_metrics.json `
+  --workflow-run-id <本轮运行ID> `
   --output <项目目录>/11_test_execution_results.yaml
 ```
 
@@ -203,6 +235,9 @@ py references/scripts/validate_execution_delivery.py `
   --execution-plan <项目目录>/10_browser_execution_plan.yaml `
   --execution-results <项目目录>/11_test_execution_results.yaml `
   --screenshots-dir <项目目录>/artifacts/screenshots `
+  --require-resource-accounting `
+  --run-metrics <项目目录>/20_workflow_run_metrics.json `
+  --workflow-run-id <本轮运行ID> `
   --output <项目目录>/12_execution_gate.json
 ```
 
@@ -227,6 +262,7 @@ py references/scripts/validate_execution_delivery.py `
 - 每条实际执行的 UI 用例存在 `<case_id>.png`；manifest 中每个文件真实存在且 SHA-256 一致，锚点位于验证文本，UI 语义键覆盖完整，兼容浏览器证据彼此独立。API 用例和 API 来源 observation 使用独立 `evidence_refs`，不得伪造截图引用。
 - 变化类用例必须在每个实际 attempt 同时存在 `<case_id>_A<n>_before.png` 与 `<case_id>_A<n>_after.png`，manifest 分别声明 `phase: before/after`、同一对象标识和 SHA-256；before manifest 的 `content_text`/`observed_target_text` 必须来自 before_state，after manifest 必须来自 after_state，并用实际断言值/字段标签填充 `content_anchors`；结果必须包含 `change_comparison`，前后证据缺失或无法证明差异时不得判定 `passed`。
 - `scope_matrix`、输入哈希、预计/实际资源和 summary 稳定性指标与逐条结果复算一致。
+- `20_workflow_run_metrics.json` 有效，运行 ID 与执行结果一致，`browser_execution` 已结束，Token 状态明确为 exact/partial/unavailable/not_applicable；不可用不得伪装成 0。完整核算规则见 `resource-accounting.md`。
 
 ## 回填与最终交付门禁
 
@@ -256,8 +292,11 @@ py references/scripts/validate_execution_delivery.py `
   --execution-plan <项目目录>/10_browser_execution_plan.yaml `
   --execution-results <项目目录>/11_test_execution_results.yaml `
   --screenshots-dir <项目目录>/artifacts/screenshots `
+  --require-resource-accounting `
   --template-xlsx <项目目录>/08_测试用例_模板版.xlsx `
   --backfill-xlsx <项目目录>/18_测试用例_执行回填版.xlsx `
+  --run-metrics <项目目录>/20_workflow_run_metrics.json `
+  --workflow-run-id <本轮运行ID> `
   --viewer-check auto `
   --output <项目目录>/19_delivery_gate.json
 ```
@@ -269,6 +308,8 @@ py references/scripts/validate_execution_delivery.py `
 - 回填版实际结果和原因字段面向人工复审，禁止直接展示完整页面 DOM；Markdown 审计源按用例卡片展示，Excel 与 Markdown 的业务结论必须一致。报告中的不稳定性列表只引用用例 ID/尝试序列，不复制原始页面全文，详细事实以回填版为准。
 - XLSX ZIP/OpenXML 可解析。
 - Windows 上安装 Excel/WPS 时，自动使用实际应用打开并读取首张工作表；已安装的查看器打不开即失败。没有可用查看器时保留 warning，CI 可用 `--viewer-check required` 强制要求。
+- 本轮运行账本已经结束；总历时、暂停/等待、实际活动时长和各阶段时长可复算。精确 Token 不是通过的前提，但统计状态、不可用原因和运行关联不能缺失。
+- `resource_accounting.enforced` 为 `false` 表示本轮走的是契约前兼容路径（`legacy_mode=true`）：这种 `pass` 只说明结构校验通过，不得据此声明资源核算合规。新项目必须带 `--require-resource-accounting`，使该字段为 `true` 且缺失版本号直接失败。
 
 交付门禁通过后才允许生成正式报告：
 
@@ -281,11 +322,13 @@ py references/scripts/generate_test_report.py `
   --delivery-gate <项目目录>/19_delivery_gate.json `
   --project-name <项目名称> `
   --backfill-xlsx-path <项目目录>/18_测试用例_执行回填版.xlsx `
+  --run-metrics <项目目录>/20_workflow_run_metrics.json `
+  --workflow-run-id <本轮运行ID> `
   --output <项目目录>/23_正式测试报告.md `
   --output-docx <项目目录>/23_正式测试报告.docx
 ```
 
-报告生成器会重新验证用例、执行和交付门禁的角色、阶段和输入 SHA-256；执行门禁已经绑定计划门禁及执行计划，从而形成四段门禁链。报告从唯一最终源计算总数，不能再从旧初稿或手工表格生成。正式交付使用 Word 版；Markdown 保留为可审计源。逐用例详情不在报告重复展开，以回填 Excel 为准。
+报告生成器会重新验证用例、执行和交付门禁的角色、阶段和输入 SHA-256，并读取已结束的运行账本；执行门禁已经绑定计划门禁及执行计划，从而形成四段门禁链。报告从唯一最终源计算总数，不能再从旧初稿或手工表格生成。正式交付使用 Word 版；Markdown 保留为可审计源。逐用例详情不在报告重复展开，以回填 Excel 为准；完整 Token 调用事件只保存在运行账本，报告不复制大段明细。
 
 ## 停止条件
 

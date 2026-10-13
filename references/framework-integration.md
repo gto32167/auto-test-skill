@@ -1,6 +1,6 @@
 # 执行框架接入
 
-PRD 工作流正式执行前设置 `AI_QA_WORKFLOW_DIR` 指向本轮产物目录。内置 runner 和直接 pytest 都在测试运行前核对执行前人工准备、设计门禁和计划门禁的输入哈希，并把文件/目录选择缩减为允许 `run` 的明确测试节点；人工执行与人工跳过的节点不进入执行。映射默认读取产物目录的 `case_execution_mapping.yaml`，可用 `AI_QA_CASE_MAPPING` 指定；复制框架后设置 `AI_QA_SKILL_ROOT` 指向技能目录。清单字段、确认规则及旧用例迁移见 [human-readiness.md](human-readiness.md)。工作流禁止利用无产物的旧脚本模式绕过准备检查。
+PRD 工作流正式执行前设置 `AI_QA_WORKFLOW_DIR` 指向本轮产物目录。内置 runner 和直接 pytest 都在测试运行前核对执行前人工准备、设计门禁和计划门禁的输入哈希，并把文件/目录选择缩减为允许 `run` 的明确测试节点；人工执行的节点不进入自动执行。映射默认读取产物目录的 `case_execution_mapping.yaml`，可用 `AI_QA_CASE_MAPPING` 指定；复制框架后设置 `AI_QA_SKILL_ROOT` 指向技能目录。清单字段、确认规则及旧用例迁移见 [human-readiness.md](human-readiness.md)。工作流禁止利用无产物的旧脚本模式绕过准备检查。
 
 ## 1. 定位
 
@@ -119,3 +119,7 @@ artifacts/
 - 结果能够映射回当前 `case_id` 和语义契约。
 
 上述验证失败时先修复框架接入或标记环境阻塞，不能用历史执行结果代替。
+
+## V4 资源核算
+
+使用 `references/scripts/workflow_run_metrics.py` 维护项目根目录的 `20_workflow_run_metrics.json`；内置 `run_tests.py` 自动记录 browser_execution 阶段。计划和执行结果声明 `resource_accounting_version: "1.0"`，新运行的计划与执行/交付门禁必须传 `--require-resource-accounting`。模型 usage 不可取得时记录 unavailable 和原因，不填假 0。详情见 [resource-accounting.md](resource-accounting.md)。

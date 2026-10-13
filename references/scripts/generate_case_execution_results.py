@@ -4,9 +4,16 @@ import argparse
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
+import sys
 from typing import Any
 
 import yaml
+
+FRAMEWORK_ROOT = Path(__file__).resolve().parents[2] / "builtin_framework"
+if str(FRAMEWORK_ROOT) not in sys.path:
+    sys.path.insert(0, str(FRAMEWORK_ROOT))
+
+from common.run_metrics import current_run, validate_metrics_document  # noqa: E402
 
 from semantic_contract import semantic_contract_hash
 from execution_readiness import NON_RUN_REASONS, disposition, validate_preflight
@@ -92,6 +99,8 @@ def main() -> None:
     parser.add_argument("--case-gate", required=True)
     parser.add_argument("--execution-plan", required=True)
     parser.add_argument("--execution-plan-gate", required=True)
+    parser.add_argument("--run-metrics", default="")
+    parser.add_argument("--workflow-run-id", default="")
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -108,6 +117,19 @@ def main() -> None:
     final_cases = list_from(load_yaml(final_case_path), ("test_cases",), "test_cases")
     plan_document = load_yaml(execution_plan_path)
     plan_meta = plan_document.get("execution_meta") or {}
+    resource_accounting_version = text(plan_meta.get("resource_accounting_version"))
+    workflow_run = None
+    metrics_path = Path(args.run_metrics).resolve() if args.run_metrics else None
+    if resource_accounting_version:
+        if resource_accounting_version != "1.0":
+            raise SystemExit("Unsupported resource_accounting_version in execution plan")
+        if metrics_path is None:
+            raise SystemExit("Resource accounting 1.0 requires --run-metrics")
+    if metrics_path is not None:
+        metric_errors = validate_metrics_document(metrics_path, args.workflow_run_id or None)
+        if metric_errors:
+            raise SystemExit("Invalid workflow run metrics: " + "; ".join(metric_errors))
+        workflow_run = current_run(metrics_path, args.workflow_run_id or None)
     plan_items = list_from(plan_document, ("browser_execution_plan", "execution_plan"), "execution_plan")
     plans_by_id = {text(item.get("case_id")): item for item in plan_items}
     preflight_errors = validate_preflight(final_cases, plan_items, plan_meta)
@@ -161,12 +183,12 @@ def main() -> None:
         stopped_before_case = text(case.get("priority")).upper() in {"P1", "P2"} and p0_gate["triggered"]
         if route in NON_RUN_REASONS:
             if raw and (as_list(raw.get("attempts")) or normalize_execution_status(raw.get("status")) in {"passed", "failed", "blocked"}):
-                raise SystemExit(f"用例 {case_id} 已在执行前分流/跳过，不应存在自动执行记录")
+                raise SystemExit(f"用例 {case_id} 已在执行前移交人工，不应存在自动执行记录")
             decision = plan.get("readiness") or {}
             reason = text(decision.get("reason"))
             result = not_run_result(index=index, case=case, mapping=mapping, semantic_hash=semantic_hash,
                                     minimum_attempts=0, reason_code=NON_RUN_REASONS[route],
-                                    actual=f"执行前已安排{'人工执行' if route == 'manual' else '跳过'}：{reason}", key_message=reason)
+                                    actual=f"执行前已安排人工执行：{reason}", key_message=reason)
             result["preflight_reason"] = reason
         elif stopped_before_case:
             raw_attempts = [attempt for attempt in as_list((raw or {}).get("attempts")) if isinstance(attempt, dict)]
@@ -258,31 +280,59 @@ def main() -> None:
     metrics = execution_metrics(generated)
     plan_resource_budget = plan_meta.get("resource_budget") or {}
     raw_resource_budget = status_data.get("resource_budget") or {}
+    browser_duration_seconds = None
+    if workflow_run is not None:
+        browser_duration_seconds = sum(
+            float(stage.get("duration_seconds") or 0)
+            for stage in workflow_run.get("stages") or []
+            if isinstance(stage, dict)
+            and stage.get("name") == "browser_execution"
+            and stage.get("status") != "running"
+        )
     resource_budget = {
         "estimated_attempts": plan_resource_budget.get("estimated_attempts"),
         "estimated_minutes": plan_resource_budget.get("estimated_minutes"),
+        "estimated_model_tokens": plan_resource_budget.get("estimated_model_tokens"),
+        "token_budget_policy": plan_resource_budget.get("token_budget_policy") or {},
         "actual_attempts": metrics["total_attempts"],
-        "actual_minutes": raw_resource_budget.get("actual_minutes"),
+        "actual_minutes": (
+            round(browser_duration_seconds / 60, 2)
+            if browser_duration_seconds is not None
+            else raw_resource_budget.get("actual_minutes")
+        ),
     }
+    execution_meta = {
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "final_cases_path": final_case_path.name,
+        "final_cases_sha256": sha256_file(final_case_path),
+        "execution_plan_path": execution_plan_path.name,
+        "execution_plan_sha256": sha256_file(execution_plan_path),
+        "execution_mode": text(plan_meta.get("execution_mode")).lower(),
+        "priority_execution_policy": plan_meta.get("priority_execution_policy") or {},
+        "priority_gate": priority_gate,
+        "retry_policy_version": "3.0",
+        "retry_rule": "按P0/P1/P2分批；先完成全部P0最终裁决；仅当全部P0最终均为failed时停止P1/P2；任一P0为passed或blocked则继续；资格执行全量双跑；首轮未稳定通过则三遍裁决",
+        "evidence_manifest_version": "1.0",
+        "scope_matrix": status_data.get("scope_matrix") or [],
+        "resource_budget": resource_budget,
+        "input_sha256": plan_meta.get("input_sha256") or {},
+    }
+    if resource_accounting_version:
+        token_usage = (workflow_run or {}).get("token_usage") or {}
+        execution_meta["resource_accounting_version"] = resource_accounting_version
+        execution_meta["workflow_run_metrics"] = {
+            "path": metrics_path.name if metrics_path is not None else "",
+            "run_id": text((workflow_run or {}).get("run_id")),
+            "status": text((workflow_run or {}).get("status")),
+            "duration_seconds": (workflow_run or {}).get("duration_seconds")
+            if (workflow_run or {}).get("duration_seconds") is not None
+            else (workflow_run or {}).get("elapsed_seconds"),
+            "measurement_status": text(token_usage.get("measurement_status")),
+        }
     dump_yaml(
         Path(args.output).resolve(),
         {
-            "execution_meta": {
-                "generated_at": datetime.now().isoformat(timespec="seconds"),
-                "final_cases_path": final_case_path.name,
-                "final_cases_sha256": sha256_file(final_case_path),
-                "execution_plan_path": execution_plan_path.name,
-                "execution_plan_sha256": sha256_file(execution_plan_path),
-                "execution_mode": text(plan_meta.get("execution_mode")).lower(),
-                "priority_execution_policy": plan_meta.get("priority_execution_policy") or {},
-                "priority_gate": priority_gate,
-                "retry_policy_version": "3.0",
-                "retry_rule": "按P0/P1/P2分批；先完成全部P0最终裁决；仅当全部P0最终均为failed时停止P1/P2；任一P0为passed或blocked则继续；资格执行全量双跑；首轮未稳定通过则三遍裁决",
-                "evidence_manifest_version": "1.0",
-                "scope_matrix": status_data.get("scope_matrix") or [],
-                "resource_budget": resource_budget,
-                "input_sha256": plan_meta.get("input_sha256") or {},
-            },
+            "execution_meta": execution_meta,
             "execution_results": generated,
             "summary": {
                 "total": len(generated),

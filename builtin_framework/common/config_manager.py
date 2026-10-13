@@ -65,7 +65,9 @@ class ConfigManager:
                 "tests": "tests",
                 "test_data": "test_data",
                 "allure_results": "allure-results",
-                "allure_report": "allure-report"
+                "allure_report": "allure-report",
+                "workflow_metrics": "20_workflow_run_metrics.json",
+                "workflow_project_dir": ""
             },
             "environment": {
                 "auto_install_missing": True,

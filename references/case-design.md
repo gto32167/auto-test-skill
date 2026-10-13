@@ -68,6 +68,10 @@
 
 ## 设计方法
 
+生成/评审前必须先完成 `generation_scope` 确认，明确本轮是 `l2_plus_l3` 还是显式 `l2_only`、覆盖深度、当前 PRD 唯一来源和预估数量区间。`full`/`generation_review` 默认启用数量契约；环境可执行性在只生成和评审的模式下标记 `not_applicable`，不可用历史探测记录代替。
+
+每条最终用例还必须提供 `title_contract` 和 `semantic_identity`。标题至少说明测试对象和动作，有分支时说明条件；语义身份至少包括端口、页面、对象、动作和主断言。门禁按语义身份审计重复，不能仅依赖标题或步骤字符串去重。完整字段和门禁规则见 `generation-quality-contract.md`。
+
 本方案默认组合以下方法：
 
 1. 等价类
@@ -241,9 +245,9 @@ case_ordering:
 - 如果步骤超过 5 步，优先考虑拆分用例
 - 如果预期结果需要覆盖多个彼此独立规则，应拆成多条用例
 
-## 需求 → 测试点 → 用例（用例数必须大于需求数）
+## 需求 → 测试点 → 用例（按事实计算覆盖下限）
 
-**核心约束**：最终用例数必须大于需求条目数。一条需求按测试设计方法可拆出多个测试点，**1 测试点 = 1 用例**，禁止把多个测试点合并进一条用例。
+**核心约束**：启用质量契约时按原子规则独立计算 N_min，最终用例必须覆盖全部必要签名；简单规则可只有一条用例，不为了数量膨胀重复案例。旧版兼容审计保留用例数大于需求条目数的结构检查。一条需求按测试设计方法可拆出多个测试点，**1 测试点 = 1 用例**，禁止把多个测试点合并进一条用例。
 
 **拆解方法**（每条需求按以下维度展开）：
 
@@ -299,7 +303,7 @@ test_points:
 - `assertion_policy` 必须把全部 observation 键完整划分为 `hard_keys` 和 `soft_keys`，每个 observation 同时声明 `assertion_class`。精确 UI 提示文案只有 PRD 有逐字依据并声明 `prd_exact: true` 时才能为 hard，否则必须为 soft。
 - `expected_outcome: rejected` 必须同时声明主接口拒绝证据和 `mutation_committed equals false`，仅有提示或仅有“未保存”文字都不够。
 - 拒绝类 `mutation_committed` 必须在 `hard_keys`；软提示差异不能覆盖业务写入硬断言。
-- 顶层 `review_audit` 必须记录不少于总用例 10% 和 P0 20% 的环境可执行性抽样；每项保留探测通道、证据和修订动作。全部用例 22/22 时必须填写可核查的满分依据。
+- 顶层 `review_audit` 在 `full` 模式必须记录不少于总用例 10% 和 P0 20% 的环境可执行性抽样；生成/评审模式设置 `environment_sampling_status: not_applicable` 并说明尚未执行。每项真实抽样保留探测通道、证据和修订动作。全部用例 22/22 时必须填写可核查的满分依据。
 - 评审评分不能代替机器门禁。生成模板版前必须运行 `references/scripts/validate_case_design.py`；如果本轮继续执行，生成执行计划前也必须先通过该门禁。
 
 门禁最小命令：
@@ -326,6 +330,8 @@ py references/scripts/validate_case_design.py `
 - `target`
 - `input`
 - `expected_ui_feedback`
+
+`step_no` 与 `target` 是**硬要求**：门禁会逐条检查 `formal_steps[N].step_no` 为从 1 开始的连续整数，且 `formal_steps[N].target` 不得为空（`must not be blank`）。原因是执行器按 `target` 定位元素，只写动作不写目标等于把定位留给执行阶段临时猜；正式步骤里也不要混入造数命令，造数放 `data_setup`。
 
 表格交付时，执行步骤需整理成：
 
@@ -479,18 +485,18 @@ py references/scripts/validate_case_design.py `
 
 | 优先级 | 风险等级 | 判级口径 | 全量用例占比 |
 |---|---|---|---:|
-| `P0` | 高 | 核心主流程、资金/库存/权限安全、关键交易链路、关键状态流转、不可逆或高影响操作 | 20%~25% |
-| `P1` | 中 | 主要业务分支、重要校验、常见异常、可恢复但影响主要功能的错误 | 35%~40% |
-| `P2` | 低 | 边缘场景、低频异常、次要边界、展示/易用性、扩展兼容和低影响验证 | 35%~40% |
+| `P0` | 高 | 核心主流程、资金/库存/权限安全、关键交易链路、关键状态流转、不可逆或高影响操作 | 默认按风险；strict 时 20%~25% |
+| `P1` | 中 | 主要业务分支、重要校验、常见异常、可恢复但影响主要功能的错误 | 默认按风险；strict 时 35%~40% |
+| `P2` | 低 | 边缘场景、低频异常、次要边界、展示/易用性、扩展兼容和低影响验证 | 默认按风险；strict 时 35%~40% |
 
 硬性规则：
 
 1. `05_test_points.yaml` 和 `06_final_test_cases.yaml` 的每一项都必须包含 `priority: P0|P1|P2` 和非空 `priority_rationale`。
 2. 同一测试点与最终用例的 `priority`、`priority_rationale` 必须完全一致。
-3. 全量用例集必须同时包含 P0、P1、P2，不允许以“本项目都很重要”为由把大部分用例标成 P0。
-4. 最终用例数达到 20 条时，按精确百分比校验上述区间；低于 20 条时只允许单条用例造成的整数取整误差，但仍必须包含三档。
+3. strict 策略必须包含 P0/P1/P2；risk_first_configurable 缺某档时，在 review_audit.priority_coverage_rationale 中逐档说明事实和风险依据，不生成虚构用例凑档。
+4. strict 策略达到 20 条时按精确百分比校验，低于 20 条只允许单条取整误差；risk_first_configurable 比例为告警。
 5. 判级先依据业务风险，再检查组合占比；禁止为凑比例随机升降级。若风险判级后占比越界，必须回查是否把普通字段校验、低频边界或展示兼容误标为 P0/P1。
-6. 任一等级缺失、占比越界、判级理由为空、出现 P3/高/中/低等非标准值，或测试点与最终用例不一致，均视为设计门禁失败。
+6. strict 策略缺档或占比越界、risk-first 缺档无风险说明、逐条理由为空、非标准等级或测试点/用例不一致，均导致设计门禁失败。
 
 `priority_rationale` 应说明业务影响，而不是复述等级。例如：
 
@@ -498,3 +504,16 @@ py references/scripts/validate_case_design.py `
 priority: "P0"
 priority_rationale: "涉及余额扣款和订单状态提交，错误会造成资金与交易数据不一致"
 ```
+# 覆盖义务与最小用例（强制）
+
+每条原子规则先展开 `coverage_obligations`，再生成测试点和用例。每项义务必须且只能声明一个 `rule_id`、一个 `design_method`、一个 `coverage_dimension`、一个 `coverage_class`、一个 `verification_target`、一个正负向、一个接口和一个预期结果。义务与测试点一对一，测试点与最终用例一对一；禁止用“一条主流程用例”吸收多个字段规则或异常分支。
+
+### 最小用例数与覆盖单位（case-count contract 1.0）
+
+在 `full` 或 `generation_review` 模式下，必须按规则特征计算 `N_min = Σ|U_i|`；`l2_only` 才可以豁免。`U_i` 不是由编写者填写的总数，而是门禁根据 `coverage_characteristics.profile` 和 PRD 事实独立展开的覆盖单位集合。每个单位必须落为一个唯一的 `coverage_unit_signature`，并在 coverage obligation、test point、final case 三处保持一致；显式 `units` 必须与独立计算结果完全相等，不能绕过 profile 展开。
+
+每条规则必须对 13 个维度逐项写 `applicability: true/false` 及原因；profile 对应维度必须为 true。输入、枚举、判定、长流程、状态、权限、查询、批量、文件、计算、时间、API、跨端的展开要求以 `references/prd-decomposition.md` 为准。缺少特征值、边界、迁移、角色或端口时，属于设计不完整而非“无此覆盖”。门禁会报告最低数、实际数、盈余、低于下限的规则、缺失/多余签名和计算明细；数量达标但签名错误仍失败。
+
+设计方法按规则性质落实并显式记录：字段取值使用等价类；存在上下限时每个边界点及边界外值使用边界值；多条件组合使用判定表或因果图；业务路径使用场景法；状态生命周期使用状态迁移；角色访问使用权限矩阵；文件/API 使用契约验证；高风险未知异常补充错误推测；适用的组合使用 pairwise，但 pairwise 不能替代明确规则、边界或负向分支。
+
+一个 `verification_target` 只能回答一个可独立判定的问题。最终用例必须复制同一 `obligation_id` 和完全相同的 `verification_point`，并恰好包含一个主断言。操作步骤可以完成必要准备，但断言不得同时验证保存成功、列表展示、库存变化等多个独立结果；这些结果应拆成不同义务和用例。L2 场景覆盖不能替代 L3 字段、边界、异常、权限、状态和数据一致性覆盖。

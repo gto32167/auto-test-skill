@@ -56,7 +56,7 @@ def prepared_nodes(project_root: Path) -> list[str] | None:
         raise ValueError("每条用例必须映射到独立、明确的 pytest 节点")
     excluded_nodes = {node_by_id[str(plan["case_id"])] for plan in plans if disposition(plan) != "run"} - {""}
     if excluded_nodes.intersection(nodes):
-        raise ValueError("人工/跳过用例不能与自动用例共享测试节点")
+        raise ValueError("人工用例不能与自动用例共享测试节点")
     return nodes
 
 

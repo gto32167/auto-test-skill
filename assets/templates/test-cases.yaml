@@ -1,8 +1,11 @@
 case_source:
   artifact_role: "final"
   mode: "full"
+  requirement_source: "prd"
+  requirement_completeness: "assessed"
   generated_from: "05_test_points.yaml"
-  priority_policy: "strict_p0_p1_p2"
+  priority_policy: "risk_first_configurable"
+  quality_contract_version: "1.0"
 
 case_ordering:
   policy: "prd_port_page_group"
@@ -18,22 +21,50 @@ executor_profiles:
     channels: ["ui"]
 
 review_audit:
-  environment_sample_case_ids: ["TC-001"]
-  environment_probes:
-    - case_id: "TC-001"
-      status: "executable"
-      channels_tried: ["ui", "api_setup"]
-      evidence: "运行时环境探测日志路径或截图索引"
-      revision_action: ""
+  execution_scope: generation_review
+  environment_sampling_status: not_applicable
+  reviewer_independence:
+    mode: independent
+    source_artifacts: [current_prd, normative_statements]
+    generated_cases_used_as_scope_source: false
+    semantic_duplicate_review: completed
+  environment_sample_case_ids: []
+  environment_probes: []
   score_distribution:
     scored_cases: 3
     perfect_scores: 0
     perfect_score_justification: ""
+  per_case_scores:
+    - case_id: "TC-001"
+      score: 20
+      evidence: "逐维评审记录：review/TC-001.md"
+      dimension_scores: {requirement_coverage: 2, business_correctness: 2, step_clarity: 2, assertability: 2, data_executability: 2, dependency_visibility: 2, automation_readiness: 2, no_redundancy: 2, quality_attribute_coverage: 1, ordering_consistency: 2, field_coverage: 1}
+    - case_id: "TC-002"
+      score: 20
+      evidence: "逐维评审记录：review/TC-002.md"
+      dimension_scores: {requirement_coverage: 2, business_correctness: 2, step_clarity: 2, assertability: 2, data_executability: 2, dependency_visibility: 2, automation_readiness: 2, no_redundancy: 2, quality_attribute_coverage: 1, ordering_consistency: 2, field_coverage: 1}
+    - case_id: "TC-003"
+      score: 20
+      evidence: "逐维评审记录：review/TC-003.md"
+      dimension_scores: {requirement_coverage: 2, business_correctness: 2, step_clarity: 2, assertability: 2, data_executability: 2, dependency_visibility: 2, automation_readiness: 2, no_redundancy: 2, quality_attribute_coverage: 1, ordering_consistency: 2, field_coverage: 1}
 
 test_cases:
   - case_id: "TC-001"
     test_point_id: "TP-001"
+    obligation_id: "OB-001"
     case_title: "合法数据创建商品"
+    title_contract:
+      object: "商品"
+      condition: "填写合法商品名称"
+      action: "保存"
+    semantic_identity:
+      port: "供应商端"
+      page: "商品创建页"
+      object: "商品"
+      condition: "商品名称为合法值"
+      action: "保存"
+      assertion: "商品创建成功"
+    coverage_unit_signature: "RULE-001|positive|valid|main_flow|accepted"
     requirement_ids: ["REQ-001"]
     module: "商品创建"
     feature_group: "供应商端-商品创建页"
@@ -50,17 +81,21 @@ test_cases:
       capability: "scenario"
       primary_channel: "ui"
       setup_separated: true
-    verification_point: "商品保存成功"
+    verification_point: "合法数据提交后商品保存成功"
     priority: "P0"
     priority_rationale: "商品创建是核心业务主流程，失败会阻断商品销售。"
     level: "L2"
     execution_readiness:
-      level: "auto" # auto / assisted / manual; business priority remains P0/P1/P2
+      level: "auto" # auto / assisted / manual; independent of P0/P1/P2
       reason: ""
       human_actions: []
       preparations: []
     automation_candidate: "high"
     operation_type: "create"
+    precondition_state: self_built
+    data_setup:
+      required_business_state: "可创建商品的后台账号"
+      strategy: "执行器独立构造本用例所需对象"
     preconditions:
       - "已登录后台并具备商品创建权限"
     test_data:
@@ -135,7 +170,20 @@ test_cases:
 
   - case_id: "TC-002"
     test_point_id: "TP-002"
+    obligation_id: "OB-002"
     case_title: "商品名称合法值"
+    title_contract:
+      object: "商品名称字段"
+      condition: "输入合法值并保存"
+      action: "重新查询商品"
+    semantic_identity:
+      port: "供应商端"
+      page: "商品创建页"
+      object: "商品名称字段"
+      condition: "输入合法值"
+      action: "保存后重新查询"
+      assertion: "回显值与输入一致"
+    coverage_unit_signature: "RULE-001|positive|valid|valid|accepted"
     requirement_ids: ["REQ-001"]
     module: "商品创建"
     feature_group: "供应商端-商品创建页"
@@ -152,23 +200,33 @@ test_cases:
       capability: "field_validation"
       primary_channel: "ui"
       setup_separated: true
-    verification_point: "商品名称保存后仍回显合法值"
+    verification_point: "商品名称保存后回显合法值"
     priority: "P2"
     priority_rationale: "合法字段输入属于低风险基础校验，失败影响局部录入且可立即恢复。"
     level: "L3"
     execution_readiness:
-      level: "auto" # auto / assisted / manual; business priority remains P0/P1/P2
+      level: "auto" # auto / assisted / manual; independent of P0/P1/P2
       reason: ""
       human_actions: []
       preparations: []
     automation_candidate: "high"
     operation_type: "persisted_validation"
+    precondition_state: self_built
+    data_setup:
+      required_business_state: "商品创建页可提交合法商品"
+      strategy: "执行器独立构造本用例所需对象"
     persistence_verification:
       required: true
       baseline_required: false
       commit_required: true
       reopen_or_query_required: true
       compare_input_persisted: true
+    change_evidence:
+      required: true
+      change_type: "state_transition"
+      comparison_required: true
+      before_assertion: "提交前商品列表不存在同名商品，表单中商品名称保留输入值 QA商品ABC123"
+      after_assertion: "保存后重新打开同一商品，商品名称回显 QA商品ABC123，可与提交前状态对比"
     preconditions:
       - "已登录后台并具备商品创建和查询权限"
     test_data:
@@ -215,9 +273,9 @@ test_cases:
     result_contract:
       verdict: "all"
       assertion_policy:
-        hard_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed"]
+        hard_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed", "before_state", "after_state", "changed", "comparison_verified"]
         soft_keys: []
-      required_produced_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed"]
+      required_produced_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed", "before_state", "after_state", "changed", "comparison_verified"]
       assertion_observation_keys: ["object_id", "input_value", "persisted_value", "persistence_verified", "mutation_committed"]
       screenshot_required: true
       observations:
@@ -250,10 +308,45 @@ test_cases:
           operator: "equals"
           expected: true
           evidence_required: true
+        - key: "before_state"
+          assertion_class: "hard"
+          source: "ui"
+          operator: "non_empty"
+          evidence_required: true
+        - key: "after_state"
+          assertion_class: "hard"
+          source: "ui"
+          operator: "non_empty"
+          evidence_required: true
+        - key: "changed"
+          assertion_class: "hard"
+          source: "runtime"
+          operator: "equals"
+          expected: true
+          evidence_required: true
+        - key: "comparison_verified"
+          assertion_class: "hard"
+          source: "runtime"
+          operator: "equals"
+          expected: true
+          evidence_required: true
 
   - case_id: "TC-003"
     test_point_id: "TP-003"
+    obligation_id: "OB-003"
     case_title: "商品名称空值拦截"
+    title_contract:
+      object: "商品名称字段"
+      condition: "字段为空"
+      action: "尝试保存"
+    semantic_identity:
+      port: "供应商端"
+      page: "商品创建页"
+      object: "商品名称字段"
+      condition: "字段为空"
+      action: "尝试保存"
+      assertion: "保存被拦截且未写入"
+    coverage_unit_signature: "RULE-001|negative|invalid|empty|rejected"
     requirement_ids: ["REQ-001"]
     module: "商品创建"
     feature_group: "供应商端-商品创建页"
@@ -270,17 +363,21 @@ test_cases:
       capability: "field_validation"
       primary_channel: "ui"
       setup_separated: true
-    verification_point: "商品名称必填提示"
+    verification_point: "商品名称为空时显示必填提示"
     priority: "P1"
     priority_rationale: "必填拦截是主要业务校验，失效会产生不完整商品数据但影响范围可控。"
     level: "L3"
     execution_readiness:
-      level: "auto" # auto / assisted / manual; business priority remains P0/P1/P2
+      level: "auto" # auto / assisted / manual; independent of P0/P1/P2
       reason: ""
       human_actions: []
       preparations: []
     automation_candidate: "high"
     operation_type: "validation"
+    precondition_state: self_built
+    data_setup:
+      required_business_state: "商品创建页可打开"
+      strategy: "执行器独立打开页面，不依赖其他用例结果"
     preconditions:
       - "已登录后台并打开商品创建页"
     test_data:

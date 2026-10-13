@@ -11,7 +11,7 @@
 - source_sheet:
 - imported_row_count:
 - imported_case_count:
-- skipped_rows:
+- skipped_rows: # 需求审计中未纳入本轮的原始行；不是执行计划的 testcase skip
 - requirement_source: PRD | existing_xlsx_baseline
 - requirement_completeness: assessed | not_assessed
 - preserved_count:
@@ -130,14 +130,17 @@
 | 拒绝类用例缺 mutation_committed=false 契约 | 否 | — |
 | 优先级不是 P0/P1/P2 或缺少判级理由 | 否 | — |
 | 测试点与最终用例优先级/理由不一致 | 否 | — |
-| P0/P1/P2 任一缺失或占比越界 | 否 | — |
+| P0/P1/P2 任一缺失且无风险说明，或 strict 策略占比越界 | 否 | — |
 | priority_policy.status 不是 pass | 否 | — |
 | 缺功能集合、同组不连续、声明顺序与实际顺序不一致 | 否 | — |
 | 缺少硬/软断言分类，或拒绝类 mutation_committed 不是硬断言 | 否 | — |
-| 环境可执行性抽样不足（总用例 <10% 或 P0 <20%） | 否 | — |
+| full 模式抽样不足（总用例 <10% 或 P0 <20%），或 generation_review 未声明 not_applicable | 否 | — |
 | 全部用例均为 22/22 但未提供逐项证据和满分依据 | 否 | — |
 
 ## 6. Priority Portfolio Review（优先级组合专项评审）
+
+- priority_policy: risk_first_configurable（默认）；项目明确要求比例时选 strict_p0_p1_p2
+- 默认按风险判级，表中比例仅为告警参考；strict 策略才作为硬门禁。
 
 | 等级 | 定义 | 要求占比 | 允许数量 | 实际数量 | 实际占比 | 状态 |
 |---|---|---:|---:|---:|---:|---|
@@ -145,6 +148,7 @@
 | P1 | 主要分支、重要校验、常见异常 | 35%~40% |  |  |  |  |
 | P2 | 低频异常、次要边界、展示/兼容/低影响验证 | 35%~40% |  |  |  |  |
 
+- priority_coverage_rationale: 按缺失的 P0/P1/P2 分别解释风险事实（risk-first 新质量契约必填）
 - invalid_priority_case_ids:
 - missing_priority_rationale_case_ids:
 - test_point_case_priority_mismatch:
@@ -177,6 +181,11 @@
 
 ## 9. Environment Executability Audit（环境可执行性抽样）
 
+- execution_scope: full | generation_review
+- environment_sampling_status: sampled | not_applicable
+- not_applicable_reason: generation_review 尚未执行；必须填写原因，不编造环境证据
+- 下方抽样比例仅适用于 full。
+
 - minimum_total_sample: 总用例数向上取整 10%
 - minimum_p0_sample: P0 用例数向上取整 20%
 - sampled_case_ids:
@@ -194,3 +203,18 @@
 - scored_cases:
 - perfect_scores:
 - perfect_score_justification: 仅当全部用例 22/22 时必填，必须引用逐项评审证据，不能只写“已检查”。
+
+
+## 11. V3 生成质量专项
+
+- quality_contract_version: 1.0
+- generation_scope 与真实确认记录：
+- 来源条款 / 原子规则 / 覆盖义务 / 测试点 / 用例的一对一审计：
+- 独立计算的 N_min / 实际数量 / 差异说明：
+- semantic_identity 重复审计及去重动作：
+- title_contract / precondition_state / 缺数据 blocked 校验：
+- reviewer_independence: independent（正式门禁不接受同会话自评）
+- per_case_scores：每条用例记录 11 维分数及证据，满分必须有依据。
+- 设计门禁路径及 quality_contract.enforced：
+
+模板中的示例评分或“否”仅为格式，必须按实际独立评审结论填写。

@@ -71,24 +71,13 @@ browser_execution_plan:
           evidence: 活动ID ACT-001，订单号 ORD-001，验收记录 runtime/preparation.md
 ```
 
-确认人、时间和数据编号必须来自真实人工回复或验收记录，Agent 不得为了过门禁代填确认。待准备的项写 `pending`。人工未准备好时，由人明确决定跳过：
+确认人、时间和数据编号必须来自真实人工回复或验收记录，Agent 不得为了过门禁代填确认。待准备的项写 `pending`；只要存在 pending，批次就停在执行前门禁，不能继续。
 
-```yaml
-readiness:
-  disposition: skip
-  reason: 本轮活动尚未配置，测试负责人决定跳过，配置完成后补测
-  confirmed_by: 实际作出决定的人
-  confirmed_at: "2026-10-08T14:00:00+08:00"
-  preparations:
-    - id: activity_order
-      status: pending
-```
-
-必须人工执行的用例安排为 `disposition: manual`，记录移交原因、确认人、时间和全部准备事项状态；也允许人决定 `skip`，禁止 `run`。人工分流/跳过仍保留 case_id 和语义哈希，资源预算只计算 `run` 的 attempts 和分钟。未完成准备且尚未决定跳过时，整个自动化批次停在准备阶段；处理完再重新生成/校验计划。
+必须人工执行的用例安排为 `disposition: manual`，记录移交原因、确认人、时间和全部准备事项状态；禁止使用 `skip`。人工移交仍保留 case_id 和语义哈希，资源预算只计算自动 `run` 的 attempts 和分钟。未完成准备时，整个自动化批次停在准备阶段；准备完成后再重新生成/校验计划。
 
 正式工作流执行设置 `AI_QA_WORKFLOW_DIR=<本轮产物目录>`；builtin runner 和直接 pytest 都会在测试运行前校验确认、设计门禁、计划门禁及输入哈希，只选择 `run` 节点。目录需包含 `06_final_test_cases.yaml`、`07_case_design_gate.json`、`10_browser_execution_plan.yaml`、`10_execution_plan_gate.json` 和 `case_execution_mapping.yaml`。映射文件可用 `AI_QA_CASE_MAPPING` 指定；框架复制到其他项目后，用 `AI_QA_SKILL_ROOT` 指向技能根目录。独立旧脚本没有这些产物时仍可使用原模式，PRD 工作流不得借旧模式绕开检查。
 
-人工用例及人工跳过用例本轮自动化结果统一为 `not_run`，分别使用 `manual_execution_required`、`human_preflight_skip` 原因码，`attempts: []`，无自动执行证据和产出数据。不得写成 `blocked` 或 `passed`。人工结果另行记录，不能拿移交决定当测试通过。P0 的人工分流/跳过属于已完成执行安排，允许继续其他准备好的用例；存在人工未测试 P0 时，不能声称“全部 P0 测试通过”或“全部 P0 失败”。
+人工用例本轮自动化结果为 `not_run`，使用 `manual_execution_required` 原因码，`attempts: []`，无自动执行证据和产出数据。不得写成 `blocked` 或 `passed`。人工结果另行记录，不能拿移交决定当测试通过。P0 的人工移交属于已完成执行安排，允许继续其他准备好的用例；存在人工未测试 P0 时，不能声称“全部 P0 测试通过”或“全部 P0 失败”。
 
 运行中真正新发生的环境变化、工具故障或证据缺失仍可判定 `blocked`；报告需区分它们与执行前已安排的人工用例。
 
@@ -96,4 +85,4 @@ readiness:
 
 回填 Excel 和 Markdown 新增 `原因说明（给测试人员） / 建议下一步 / 技术原因（给Agent）`。执行 YAML 可以提供 `human_reason`、`next_action`，生成器也会依据状态和业务摘要补充说明。技术错误、选择器、原始日志和原因码留在技术字段。
 
-失败说明写“哪一步、原本应该发生什么、实际发生什么、接下来怎么处理”，例如：“第3步没有达到预期。预期：收件人为空时禁止提交。实际：系统仍创建了订单。核对截图，确认后提交缺陷，修复后回归。”准备问题写“缺什么，谁准备，准备到什么状态”，人工跳过写“本轮未执行及人工决定的原因”。不能只写“断言失败”“UI assertion not met”或“前置缺失”，也不能凭一次失败推断已完成登录、已下单或资金已到账。
+失败说明写“哪一步、原本应该发生什么、实际发生什么、接下来怎么处理”，例如：“第3步没有达到预期。预期：收件人为空时禁止提交。实际：系统仍创建了订单。核对截图，确认后提交缺陷，修复后回归。”准备问题写“缺什么，谁准备，准备到什么状态”，人工移交写清测试人员和交接原因。不能只写“断言失败”“UI assertion not met”或“前置缺失”，也不能凭一次失败推断已完成登录、已下单或资金已到账。

@@ -1,8 +1,10 @@
 # UI 自动化测试框架
 
-正式 PRD 工作流执行需设置 `AI_QA_WORKFLOW_DIR` 为本轮产物目录。runner 和直接 pytest 会在测试运行前校验人工准备清单与门禁，只运行计划中 `readiness.disposition: run` 的明确节点；必须人工执行或人工跳过的用例保留为本轮未执行。默认映射文件为 `case_execution_mapping.yaml`；可用 `AI_QA_CASE_MAPPING` 指定映射路径，框架复制到其他项目后用 `AI_QA_SKILL_ROOT` 指向技能目录。详见 [人工准备与结果说明](../references/human-readiness.md)。
+正式 PRD 工作流执行需设置 `AI_QA_WORKFLOW_DIR` 为本轮产物目录。runner 和直接 pytest 会在测试运行前校验人工准备清单与门禁，只运行计划中 `readiness.disposition: run` 的明确节点；必须人工执行的用例移交测试人员并保留为本轮未执行。默认映射文件为 `case_execution_mapping.yaml`；可用 `AI_QA_CASE_MAPPING` 指定映射路径，框架复制到其他项目后用 `AI_QA_SKILL_ROOT` 指向技能目录。详见 [人工准备与结果说明](../references/human-readiness.md)。
 
 本目录是 `ai-qa-prd-workflow` 的 pytest + Playwright 内置执行框架，负责把项目生成或录制的脚本转换为 pytest 用例，并提供共享浏览器会话、运行时配置、失败证据采集和结构化执行结果。
+
+当前框架版本：`4.0.0`
 
 正式交付报告仍由工作流根目录下的 `references/scripts/generate_test_report.py` 生成。Allure HTML 只是可选辅助报告，不能代替回填版用例和 Word 正式报告。
 
@@ -112,3 +114,7 @@ artifacts/
 - `framework_transformer.py`：原始脚本转换入口
 - `run_tests.py`：测试发现、执行、汇总和可选 Allure HTML 生成
 - `common/`：上述入口依赖的公共实现
+
+## V4 资源核算
+
+使用 `references/scripts/workflow_run_metrics.py` 维护项目根目录的 `20_workflow_run_metrics.json`；内置 `run_tests.py` 自动记录 browser_execution 阶段。计划和执行结果声明 `resource_accounting_version: "1.0"`，新运行的计划与执行/交付门禁必须传 `--require-resource-accounting`。模型 usage 不可取得时记录 unavailable 和原因，不填假 0。详情见 [resource-accounting.md](../references/resource-accounting.md)。

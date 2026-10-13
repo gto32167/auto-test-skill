@@ -5,6 +5,12 @@ from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+import sys
+
+FRAMEWORK_ROOT = Path(__file__).resolve().parents[2] / "builtin_framework"
+if str(FRAMEWORK_ROOT) not in sys.path:
+    sys.path.insert(0, str(FRAMEWORK_ROOT))
+from common.run_metrics import current_run, validate_metrics_document
 
 from workflow_gate_common import (
     list_from,
@@ -75,6 +81,89 @@ def scope_rows(meta: dict[str, Any]) -> list[list[str]]:
     return rows
 
 
+def format_duration(seconds: Any) -> str:
+    if not isinstance(seconds, (int, float)) or seconds < 0:
+        return "不可用"
+    total = int(round(float(seconds)))
+    hours, remainder = divmod(total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours:
+        return f"{hours}小时{minutes}分{secs}秒"
+    if minutes:
+        return f"{minutes}分{secs}秒"
+    return f"{secs}秒"
+
+def resource_accounting_rows(workflow_run: dict[str, Any] | None) -> tuple[list[list[str]], list[list[str]], str]:
+    if workflow_run is None:
+        return [["工作流运行统计", "历史产物未启用"]], [], "历史产物未启用运行账本。"
+    usage = workflow_run.get("token_usage") or {}
+    measurement = text(usage.get("measurement_status"))
+    measurement_labels = {
+        "exact": "精确",
+        "partial": "部分采集",
+        "unavailable": "不可用",
+        "not_applicable": "不适用",
+    }
+    if measurement in {"exact", "partial"}:
+        measured = lambda field: str(usage.get(field, 0))
+    elif measurement == "not_applicable":
+        measured = lambda field: "0（没有模型阶段）"
+    else:
+        measured = lambda field: "不可用"
+    exact_total = usage.get("exact_total_tokens")
+    incomplete = []
+    for stage in workflow_run.get("stages") or []:
+        if not isinstance(stage, dict) or stage.get("executor") not in {"model", "mixed"}:
+            continue
+        if stage.get("token_coverage") == "exact":
+            continue
+        reason = text(stage.get("token_unavailable_reason")) or "未取得精确 usage 元数据"
+        incomplete.append(f"{text(stage.get('name'))}: {reason}")
+    rows = [
+        ["工作流运行 ID", text(workflow_run.get("run_id"))],
+        ["工作流状态", text(workflow_run.get("status"))],
+        ["开始时间", text(workflow_run.get("started_at"))],
+        ["结束时间", text(workflow_run.get("finished_at")) or "尚未结束"],
+        ["工作流总时长", format_duration(workflow_run.get("duration_seconds"))],
+        ["暂停/外部等待时长", format_duration(workflow_run.get("paused_seconds"))],
+        ["实际活动时长", format_duration(workflow_run.get("active_duration_seconds"))],
+        ["Token 统计状态", measurement_labels.get(measurement, measurement or "不可用")],
+        ["输入 Token", measured("input_tokens")],
+        ["输出 Token", measured("output_tokens")],
+        ["缓存输入 Token（已包含在输入中）", measured("cached_input_tokens")],
+        ["推理 Token（已包含在输出中）", measured("reasoning_tokens")],
+        ["已测总 Token", measured("measured_total_tokens")],
+        ["精确总 Token", str(exact_total) if exact_total is not None else "不可用"],
+        ["未完整采集阶段", "；".join(incomplete) or "无"],
+    ]
+    stage_labels = {
+        "requirements": "需求拆解",
+        "design": "用例设计",
+        "review": "用例评审",
+        "plan": "执行计划",
+        "browser_execution": "浏览器执行",
+        "backfill": "结果回填",
+        "report": "报告编制",
+    }
+    stage_rows = [
+        [
+            text(stage.get("stage_id")),
+            stage_labels.get(text(stage.get("name")), text(stage.get("name"))),
+            text(stage.get("executor")),
+            text(stage.get("status")),
+            format_duration(stage.get("duration_seconds")),
+            text(stage.get("token_coverage")),
+        ]
+        for stage in workflow_run.get("stages") or []
+        if isinstance(stage, dict)
+    ]
+    note = (
+        "Token 来自模型服务或平台返回的精确 usage；缓存输入和推理 Token 只作构成披露，不重复加入总数。"
+        if measurement in {"exact", "partial"}
+        else "当前运行未取得可核验的模型 usage；“不可用”不等于 0，也不使用估算值冒充实际消耗。"
+    )
+    return rows, stage_rows, note
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate a formal report only after all delivery gates pass.")
     parser.add_argument("--final-cases", required=True)
@@ -87,6 +176,8 @@ def main() -> None:
     parser.add_argument("--environment", default="")
     parser.add_argument("--batch-id", default="")
     parser.add_argument("--allure-report-path", default="")
+    parser.add_argument("--run-metrics", default="")
+    parser.add_argument("--workflow-run-id", default="")
     parser.add_argument("--backfill-xlsx-path", required=True)
     parser.add_argument("--original-backfill-xlsx-path", default="")
     parser.add_argument("--output", required=True, help="Machine-auditable Markdown report path (.md)")
@@ -102,14 +193,15 @@ def main() -> None:
     require_gate_role(case_gate_path, "case_design")
     require_gate_role(execution_gate_path, "execution_delivery", "execution")
     require_gate_role(delivery_gate_path, "execution_delivery", "delivery")
-    verify_passed_gate(case_gate_path, final_case_path, "final_cases")
+    case_gate = verify_passed_gate(case_gate_path, final_case_path, "final_cases")
     verify_passed_gate(execution_gate_path, execution_path, "execution_results")
     verify_passed_gate(delivery_gate_path, execution_path, "execution_results")
     execution_gate = load_json(execution_gate_path)
     plan_gate_record = (execution_gate.get("inputs") or {}).get("execution_plan_gate") or {}
     plan_gate_name = Path(text(plan_gate_record.get("path"))).name or "<missing>"
 
-    cases = list_from(load_yaml(final_case_path), ("test_cases",), "test_cases")
+    case_document = load_yaml(final_case_path)
+    cases = list_from(case_document, ("test_cases",), "test_cases")
     results = list_from(load_yaml(execution_path), ("execution_results",), "execution_results")
     results_by_id = {text(item.get("case_id")): item for item in results}
     case_ids = [text(item.get("case_id")) for item in cases]
@@ -152,6 +244,26 @@ def main() -> None:
     executed = counts["passed"] + counts["failed"] + counts["blocked"]
     execution_doc = load_yaml(execution_path)
     execution_meta = execution_doc.get("execution_meta") or {}
+    resource_accounting_version = text(execution_meta.get("resource_accounting_version"))
+    workflow_run = None
+    metrics_path = Path(args.run_metrics).resolve() if args.run_metrics else None
+    if resource_accounting_version:
+        if resource_accounting_version != "1.0":
+            raise SystemExit("Unsupported execution resource_accounting_version")
+        if metrics_path is None:
+            raise SystemExit("Resource accounting 1.0 requires --run-metrics")
+    if metrics_path is not None:
+        verify_passed_gate(delivery_gate_path, metrics_path, "workflow_run_metrics")
+        reference = execution_meta.get("workflow_run_metrics") or {}
+        run_id = args.workflow_run_id or text(reference.get("run_id")) or None
+        metric_errors = validate_metrics_document(metrics_path, run_id)
+        if metric_errors:
+            raise SystemExit("Invalid workflow run metrics: " + "; ".join(metric_errors))
+        workflow_run = current_run(metrics_path, run_id)
+        if workflow_run.get("status") == "running":
+            raise SystemExit("Formal report requires a finalized workflow run")
+        if resource_accounting_version and text(reference.get("run_id")) != text(workflow_run.get("run_id")):
+            raise SystemExit("Execution results and workflow metrics use different run IDs")
     priority_gate = execution_meta.get("priority_gate") or {}
     special_disposition_rows: list[str] = []
     for case in cases:
@@ -167,6 +279,16 @@ def main() -> None:
     metrics = execution_metrics(results)
     telemetry = metrics.get("telemetry") or {}
     budget = execution_meta.get("resource_budget") or {}
+    accounting_rows, stage_rows, accounting_note = resource_accounting_rows(workflow_run)
+    source_meta = case_document.get("case_source") or {}
+    requirement_source = text(source_meta.get("requirement_source"))
+    if requirement_source == "existing_xlsx_baseline":
+        source_note = "测试依据为用户提供的 Excel 用例基线；需求完整性未评估，结果不代表完整 PRD 覆盖。"
+    elif requirement_source == "prd":
+        source_note = "测试依据为本次提供的 PRD；需求处理范围以设计门禁绑定的需求和测试点为准。"
+    else:
+        source_note = "最终用例未显式声明需求来源；请结合设计门禁绑定的输入核对测试依据和覆盖范围。"
+    execution_mode = text(execution_meta.get("execution_mode")) or "未声明"
     overall = "全部 P0 最终均失败，已停止 P1/P2，不建议验收或发布" if priority_gate_triggered else (
         "存在失败项，需修复后回归" if counts["failed"] else (
         "存在阻塞或未执行项，结论受限" if counts["blocked"] or counts["not_run"] else "本轮执行通过"
@@ -191,7 +313,7 @@ def main() -> None:
         if normalize_execution_status(result.get("status")) == "not_run"
     )
     not_run_reason_text = "；".join(
-        f"{ {'manual_execution_required': '交给人工执行', 'human_preflight_skip': '人工在执行前决定跳过', 'p0_all_failed_stop_gate': '核心用例全部失败后停止', 'script_status_missing': '缺少执行记录'}.get(reason, reason or '未说明')}:{count}条" for reason, count in sorted(not_run_reasons.items())
+        f"{ {'manual_execution_required': '交给人工执行', 'p0_all_failed_stop_gate': '核心用例全部失败后停止', 'script_status_missing': '缺少执行记录'}.get(reason, reason or '未说明')}:{count}条" for reason, count in sorted(not_run_reasons.items())
     ) or "无"
     lines = [
         "# 正式测试报告",
@@ -204,6 +326,7 @@ def main() -> None:
         f"- 需求版本：{args.requirement_version}",
         f"- 执行环境：{args.environment}",
         f"- 执行模式：{execution_meta.get('execution_mode', '')}",
+        f"- 用例范围：{text(source_meta.get('mode')) or '未声明'}",
         f"- 最终用例源：{final_case_path.name}",
         f"- 最终用例 SHA-256：{sha256_file(final_case_path)}",
         "",
@@ -215,7 +338,7 @@ def main() -> None:
         f"- 失败：{counts['failed']}",
         f"- 阻塞：{counts['blocked']}",
         f"- 未执行：{counts['not_run']}",
-        f"- 其中交给人工执行：{not_run_reasons['manual_execution_required']}；人工在执行前决定跳过：{not_run_reasons['human_preflight_skip']}",
+        f"- 其中交给人工执行：{not_run_reasons['manual_execution_required']}",
         f"- 含阻塞通过率：{metrics['final_pass_rate_including_blocked']:.2f}%",
         f"- 已判定项通过率：{metrics['final_pass_rate_judged_only']:.2f}%",
         f"- 总体结论：{overall}",
@@ -250,14 +373,14 @@ def main() -> None:
         "",
         *md_table(["测试轨道", "状态", "覆盖说明", "原因", "产物"], scope_rows(execution_meta)),
         "",
-        "> `executed` 表示该轨道已实际执行；`skipped` 表示因缺少输入或本轮不在范围内而明确跳过；`blocked` 表示计划执行但环境或能力受阻。API 仅用于造数或辅助观察时，不计为独立 API 测试。",
+        "> `executed` 表示该轨道已实际执行；`blocked` 表示计划执行但环境或能力受阻；人工用例会明确移交并保留为 not_run。API 仅用于造数或辅助观察时，不计为独立 API 测试。",
         "",
         "## 4. 执行稳定性与资源",
         "",
         *md_table(
             ["指标", "结果"],
             [
-                ["首遍通过率", f"{metrics['first_passed']}/{judged} = {metrics['first_pass_rate']:.2f}%"],
+                ["首遍通过率", f"{metrics['first_passed']}/{metrics['executed_cases']} = {metrics['first_pass_rate']:.2f}%"],
                 ["最终通过率（含阻塞）", f"{metrics['final_pass_rate_including_blocked']:.2f}%"],
                 ["最终通过率（已判定项）", f"{metrics['final_pass_rate_judged_only']:.2f}%"],
                 ["总 attempts", metrics["total_attempts"]],
@@ -275,17 +398,24 @@ def main() -> None:
             ],
         ),
         "",
+        "### 工作流时长与 Token 核算",
+        "",
+        *md_table(["指标", "结果"], accounting_rows),
+        "",
+        accounting_note,
+        "",
+        *md_table(["阶段 ID", "阶段", "执行类型", "状态", "耗时", "Token 覆盖"], stage_rows),
+        "",
         "### 4.1 不稳定性风险",
         "",
         *md_table(["用例ID", "优先级", "尝试序列", "最终观察"], unstable_rows),
         "",
         "### 4.2 本轮耗时与执行策略说明",
         "",
-        "- 本轮按 P0→P1→P2 顺序串行执行，未采用并发。可判定的 UI 用例至少双跑，首两次未双通过时追加第三次裁决。",
-        f"- 实际产生 {metrics['total_attempts']} 次 attempt，其中 {metrics['third_attempt_cases']} 条用例进入第三次裁决。浏览器会话复用已验证的登录态，每次 attempt 都重新进入目标路由并重新采集断言证据。",
-        "- 已实现的页面动作包括登录态探活、营销路由切换、列表与字段观察、状态下拉展开以及新建入口跳转。",
-        "- 需要构造特定活动数据、编辑或保存、商品或门店弹窗、排序翻页、跨端验证的场景，在缺少可靠动作映射和结果观察器时判定为 blocked，不据此认定产品失败。",
-        f"- 实际耗时 {budget.get('actual_minutes', 0)} 分钟为各 attempt 的记录时长合计，不包含 blocked 能力探测、报告生成和人工复核时间。",
+        f"- 执行模式：{execution_mode}。执行路由、优先级顺序和重试资格以已通过门禁的计划与结果为准。",
+        f"- 实际记录 {metrics['total_attempts']} 次 attempt，其中 {metrics['third_attempt_cases']} 条用例进入第三次裁决；人工执行的用例不计入自动 attempts。",
+        "- 已执行的动作、前置数据和断言通道以逐用例 execution_trace、observations 和 evidence 为准。",
+        f"- attempt 记录时长合计：{budget.get('actual_minutes', '未记录')} 分钟；工作流总时长、暂停和阶段耗时见资源账本。",
         "",
         "### 4.3 大数据量用例处置",
         "",
@@ -299,11 +429,13 @@ def main() -> None:
         "",
         "## 6. 风险与差异说明",
         "",
-        "- 本轮没有正式 PRD；测试依据为交互原型和已有 Excel 用例。原型无法证明的业务规则未被臆造为产品结论。",
+        f"- {source_note}",
+        *(["- 本次明确限定 L2 场景范围，未启用完整生成质量契约，不代表 L2 + L3 全量覆盖。"] if (case_gate.get("quality_contract") or {}).get("waived") else
+          ["- 用例设计使用存量兼容审计；设计门禁通过不代表 V3 生成质量契约合规。"] if not (case_gate.get("quality_contract") or {}).get("enforced") else []),
         f"- 不稳定用例：{metrics['unstable_cases']} 条，必须进入专项回归队列，不得仅凭最终 passed 隐藏。",
         f"- P2 单跑豁免：{metrics['single_run_exempt_cases']} 条；仅在风险回归且基线资格通过门禁时有效。",
         "- blocked 前必须完成能力探测；阻塞原因和已尝试通道以回填用例及执行结果为准。",
-        f"- P0 优先级停止门禁：{priority_gate_status}；{'P1/P2 已按计划继续执行。' if not priority_gate_triggered else 'P1/P2 未启动只表示质量停止，不得解释为通过或环境阻塞。'}",
+        f"- P0 优先级停止门禁：{priority_gate_status}；{'未执行项及其原因见范围统计和回填文件。' if not priority_gate_triggered else 'P1/P2 未启动只表示质量停止，不得解释为通过或环境阻塞。'}",
         "",
         "## 7. 关键产出文件",
         "",
@@ -315,6 +447,7 @@ def main() -> None:
         ),
         f"- 执行结果：{execution_path}",
         f"- Allure 报告：{args.allure_report_path or '未产出'}",
+        f"- 工作流运行账本：{str(metrics_path) if metrics_path is not None else '历史产物未启用'}",
     ]
     output_path = Path(args.output).resolve()
     docx_path = Path(args.output_docx).resolve()

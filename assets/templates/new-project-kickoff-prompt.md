@@ -32,12 +32,12 @@
    a. PRD 结构化拆解（角色/模块/流程/字段/状态/风险）→ prd_analysis.md
    b. 读取规范和模板 → 04_scenario_cases.yaml（仅设计初稿，禁止执行/交付）
    c. 需求对齐核对 → 05_requirements.yaml，所有需求逐条有处理状态
-   d. 用例评审（11 维度 + 优先级专项）→ 评审评分文档；逐条检查判级理由并列出三档数量、比例、允许区间和越界项；环境可执行性抽样不少于总用例 10%，P0 抽样不少于 P0 总数 20%，满分项给出可复核依据，不通过的打回补全
+   d. 用例评审（11 维度 + 优先级专项）→ 评审评分文档；逐条检查判级理由并列出三档数量、比例、允许区间和越界项；full 模式环境抽样不少于总用例 10% 和 P0 总数 20%；generation_review 标记 not_applicable 并说明未执行；满分项给出可复核依据，不通过的打回补全
    e. 生成 05_test_points.yaml：场景级 L2 + 字段级 L3；每点声明 feature_group/polarity/interface/expected_outcome/priority/priority_rationale；按“PRD 首次出现顺序→端口→页面/相似功能集合→集合内场景顺序”编排，同一 feature_group 必须连续；1 测试点=1 最终用例、单用例恰好一个主断言
    f. 可选：有代码库则读取代码补充实现线索（不能覆盖 PRD）
    g. 可选：有数据库信息则探测基础数据（账号/商品/配送员/订单基线）
-   h. 生成唯一最终源 06_final_test_cases.yaml，声明 case_source.priority_policy=strict_p0_p1_p2 和 case_ordering.policy=prd_port_page_group/group_sequence，包含 executor_profiles、test_intent、execution_contract 和可求值的 observations；每个 observation 声明 hard/soft，assertion_policy 完整分组；拒绝类 mutation_committed=false 永远是 hard；运行用例设计门禁生成 07_case_design_gate.json，priority_policy.status 必须为 pass
-   i. 门禁通过后生成 08_测试用例_模板版.xlsx；有用户模板就沿用，未提供也必须按默认 7 列模板生成：用例ID / 功能集合 / 用例名称 / 优先级 / 前置条件 / 执行步骤 / 预期结果
+   h. 生成唯一最终源 06_final_test_cases.yaml，声明 case_source.priority_policy=risk_first_configurable（仅项目显式要求配额时用 strict_p0_p1_p2） 和 case_ordering.policy=prd_port_page_group/group_sequence，包含 executor_profiles、test_intent、execution_contract 和可求值的 observations；每个 observation 声明 hard/soft，assertion_policy 完整分组；拒绝类 mutation_committed=false 永远是 hard；运行用例设计门禁生成 07_case_design_gate.json，priority_policy.status 必须为 pass
+   i. 门禁通过后生成 08_测试用例_模板版.xlsx；有用户模板就沿用，未提供也必须按默认 10 列模板生成：用例ID / 功能集合 / 用例名称 / 优先级 / 执行级别 / 人工介入说明 / 人工准备清单 / 前置条件 / 执行步骤 / 预期结果
 3. 执行阶段（执行项编排）：
    - 环境门禁：登录态探活、权限核对、API 可达、前置构造通道就绪；不通过则不执行
    - 【功能执行】必做：只读取已通过门禁的 06_final_test_cases.yaml；执行计划先通过 10_execution_plan_gate.json，profile/能力/意图/核心步骤/观察键不一致时禁止执行
@@ -59,10 +59,10 @@
 
 【质量底线】
 - 每条用例独立自造数据，禁止跨用例引用执行结果
-- 完整交付默认 full；测试点与最终用例一对一，用例数大于需求数，每条用例恰好一个主断言
+- 完整交付默认 full；测试点与最终用例一对一，用例覆盖独立计算的 N_min 和全部必要签名，每条用例恰好一个主断言
 - 用例顺序必须跟随当前 PRD，并按端口和页面/相似功能集合聚合；同一功能集合不得被其他集合穿插，Excel 顺序必须与最终 YAML 一致
-- 优先级只允许 P0/P1/P2；测试点与最终用例的等级和非空判级理由必须一致；按业务风险判级后，全量占比必须满足 P0 20%～25%、P1 35%～40%、P2 35%～40%，禁止随机凑数
-- 优先级专项是独立硬门禁；缺等级、缺理由、占比越界或映射不一致时，即使 11 维评分通过也必须打回
+- 优先级只允许 P0/P1/P2；测试点与最终用例的等级和非空判级理由必须一致；按业务风险判级后，默认比例仅作风险组合告警；显式 strict_p0_p1_p2 才强制 P0 20%～25%、P1 35%～40%、P2 35%～40%，禁止为配额改级
+- 优先级专项是独立硬门禁；缺等级、缺理由、strict 策略占比越界或映射不一致时，即使 11 维评分通过也必须打回
 - 正式执行计划和实际启动顺序固定为 P0→P1→P2，同级保持最终用例原顺序；先完成全部 P0 的重试 3.0 最终裁决；只有全部 P0 最终均为 failed 时才停止 P1/P2，只要任意 P0 最终为 passed 或 blocked 就继续执行 P1/P2
 - 全部 P0 最终均失败而停止后，仍须覆盖全部结果 ID：未启动 P1/P2 写 not_run/stability:not_run/p0_all_failed_stop_gate/attempts:[]，继续执行门禁、回填 Excel、交付门禁和 Markdown/Word 正式报告
 - 断言用强断言（状态机+时间戳+数据对比），避免"页面出现关键词"误判
@@ -99,3 +99,9 @@ PRD：{路径或“未提供”}
 - **可选通道缺输入不中断**：缺代码/接口只跳过对应项；核心门禁失败必须停止进入下一阶段
 - **数据自造是硬规则**：每条用例独立构造前置数据，这也是用例能被可靠执行的前提
 - **唯一来源与非空交付是硬规则**：只执行 06_final_test_cases.yaml；两份 XLSX 行数/ID 必须与最终用例一致并通过可读性检查
+
+## V4 新项目补充约束
+
+PRD 生成/评审必须启用 `quality_contract_version: "1.0"` 与 `atomicity_contract_version: "1.0"`，形成原文条款 → 原子规则 → 覆盖义务 → 测试点 → 最终用例的一对一链；按当前 PRD 事实独立计算覆盖单位，保留 semantic_identity、title_contract、precondition_state 与真实独立评分。默认 risk_first_configurable，strict 比例仅在项目明确配置时强制。generation_review 不伪造环境抽样。已有 XLSX-only 规范化继续标记需求完整性未评估，不编造 PRD 条款。
+
+维护 `20_workflow_run_metrics.json`，新运行计划和执行/交付门禁都加 `--require-resource-accounting`；结果生成与报告使用 `--run-metrics` 和同一 `--workflow-run-id`。只登记精确 usage；无法取得时声明 unavailable。大量设计错误用 `--error-report`，历史迁移用 `--legacy-audit`，兼容 pass 不等于质量契约合规。读取 references/generation-quality-contract.md 和 references/resource-accounting.md 后执行本阶段。

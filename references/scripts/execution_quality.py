@@ -81,7 +81,7 @@ def evaluate_p0_stop_gate(
     p0_completed = sum(
         status in completed_statuses or (
             status == "not_run" and (result_by_id.get(case_id) or {}).get("not_run_reason")
-            in {"manual_execution_required", "human_preflight_skip"}
+            in {"manual_execution_required"}
         )
         for case_id, status in zip(p0_ids, p0_statuses)
     )

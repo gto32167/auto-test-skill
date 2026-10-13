@@ -46,6 +46,15 @@ def main() -> int:
     parser.add_argument("--case-gate", required=True)
     parser.add_argument("--final-cases", required=True)
     parser.add_argument("--execution-plan", required=True)
+    parser.add_argument(
+        "--require-resource-accounting",
+        action="store_true",
+        help=(
+            "Hard-fail when execution_meta.resource_accounting_version is missing. "
+            "Artifacts written before the resource-accounting contract stay compatible by default; "
+            "new runs must pass this flag."
+        ),
+    )
     parser.add_argument("--output", required=True)
     parser.add_argument("--preflight-report", help="执行前人工准备清单；默认与门禁文件同目录")
     args = parser.parse_args()
@@ -109,6 +118,40 @@ def main() -> int:
         for field in ("estimated_attempts", "estimated_minutes"):
             if not isinstance(budget.get(field), (int, float)) or budget.get(field) < 0:
                 errors.append(f"execution plan resource_budget.{field} must be a non-negative number")
+    resource_accounting_version = text(plan_meta.get("resource_accounting_version"))
+    resource_accounting_enforced = resource_accounting_version == "1.0"
+    if resource_accounting_version:
+        if resource_accounting_version != "1.0":
+            errors.append("execution plan resource_accounting_version must be 1.0")
+        if not isinstance(budget, dict):
+            pass
+        else:
+            estimated_tokens = budget.get("estimated_model_tokens")
+            if estimated_tokens is not None and (
+                not isinstance(estimated_tokens, (int, float)) or estimated_tokens < 0
+            ):
+                errors.append("execution plan resource_budget.estimated_model_tokens must be null or non-negative")
+            token_policy = budget.get("token_budget_policy")
+            if not isinstance(token_policy, dict):
+                errors.append("execution plan resource_budget.token_budget_policy must be a mapping")
+            else:
+                if token_policy.get("quality_constraints_may_not_be_reduced") is not True:
+                    errors.append(
+                        "execution plan token budget policy must forbid reducing quality constraints"
+                    )
+                if token_policy.get("checkpoint_on_overrun") is not True:
+                    errors.append("execution plan token budget policy must require checkpoint_on_overrun")
+    elif args.require_resource_accounting:
+        errors.append(
+            "execution plan execution_meta.resource_accounting_version is missing; "
+            "passing --require-resource-accounting makes the resource-accounting 1.0 contract mandatory "
+            "(declare resource_accounting_version: \"1.0\" plus resource_budget.token_budget_policy)"
+        )
+    else:
+        warnings.append(
+            "legacy execution plan has no resource_accounting_version; duration/token accounting is not enforced "
+            "(pass --require-resource-accounting to make it mandatory)"
+        )
 
     case_ids = [text(case.get("case_id")) for case in cases]
     preflight_errors = validate_preflight(cases, plans, plan_meta)
@@ -142,7 +185,7 @@ def main() -> int:
         semantic_hashes[case_id] = expected_hash
         if text(item.get("semantic_contract_sha256")) != expected_hash:
             errors.append(f"Case {case_id} execution plan has a stale or missing semantic contract hash")
-        if disposition(item) in {"manual", "skip"}:
+        if disposition(item) == "manual":
             minimum_attempts_by_case[case_id] = 0
             continue
 
@@ -381,6 +424,12 @@ def main() -> int:
             "mode": execution_mode,
             "minimum_attempts_by_case": minimum_attempts_by_case,
             "single_run_exempt_cases": sum(value == 1 for value in minimum_attempts_by_case.values()),
+        },
+        "resource_accounting": {
+            "version": resource_accounting_version,
+            "enforced": resource_accounting_enforced,
+            "legacy_mode": not resource_accounting_enforced,
+            "required_by_cli": bool(args.require_resource_accounting),
         },
         "errors": errors,
         "warnings": warnings,

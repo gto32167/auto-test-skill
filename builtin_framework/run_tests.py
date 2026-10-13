@@ -10,6 +10,7 @@ from pathlib import Path
 from datetime import datetime
 
 from common.environment_manager import EnvironmentManager, print_environment_report
+from common.run_metrics import ensure_active_run, finalize_run, finish_stage, start_stage
 from common.script_parser import ScriptParser
 from common.execution_preflight import filter_targets, prepared_nodes
 
@@ -42,6 +43,16 @@ class TestRunner:
             "paths.record_raw", "record_raw"
         )
         self.run_history_path = self.project_root / "artifacts" / "run_history.json"
+        configured_metrics_path = os.environ.get("WORKFLOW_RUN_METRICS") or self.config.get(
+            "paths.workflow_metrics", "20_workflow_run_metrics.json"
+        )
+        self.workflow_metrics_path = self._resolve_path(configured_metrics_path)
+        configured_project_dir = self.config.get("paths.workflow_project_dir", "")
+        self.workflow_project_dir = (
+            self._resolve_path(configured_project_dir)
+            if configured_project_dir
+            else self.workflow_metrics_path.parent
+        )
         self.latest_result = None
 
     def clean_results(self):
@@ -112,7 +123,7 @@ class TestRunner:
             relative_targets = [str(Path(target).relative_to(self.project_root)) if Path(target).is_absolute() and Path(target).is_relative_to(self.project_root) else target for target in targets]
             targets = filter_targets(relative_targets, nodes)
             if not targets:
-                result = {"success": True, "returncode": 0, "targets": [], "command": [], "per_test_results": [], "stdout": "本轮没有可自动执行的用例；人工执行/跳过安排已保留。", "stderr": ""}
+                result = {"success": True, "returncode": 0, "targets": [], "command": [], "per_test_results": [], "stdout": "本轮没有可自动执行的用例；人工执行安排已保留。", "stderr": ""}
                 return result if return_details else True
         self.clean_results()
         
@@ -329,6 +340,82 @@ class TestRunner:
             return False
 
     def run_all(
+        self,
+        test_path=None,
+        headless=False,
+        open_report=True,
+        browser=None,
+        slow_mo=None,
+        selected_tests=None,
+        return_details=False,
+        continue_on_failure=False,
+        progress_callback=None,
+    ):
+        metrics_context = self._start_workflow_metrics()
+        final_status = "failed"
+        try:
+            result = self._run_all_impl(
+                test_path=test_path,
+                headless=headless,
+                open_report=open_report,
+                browser=browser,
+                slow_mo=slow_mo,
+                selected_tests=selected_tests,
+                return_details=True,
+                continue_on_failure=continue_on_failure,
+                progress_callback=progress_callback,
+            )
+            final_status = "completed" if result.get("success") else "failed"
+            if metrics_context:
+                result["workflow_metrics_path"] = str(self.workflow_metrics_path)
+                result["workflow_run_id"] = metrics_context["run_id"]
+                result["workflow_stage_id"] = metrics_context["stage_id"]
+            if return_details:
+                return result
+            return bool(result.get("success"))
+        finally:
+            self._finish_workflow_metrics(metrics_context, final_status)
+
+    def _start_workflow_metrics(self):
+        try:
+            run_id, created = ensure_active_run(
+                self.workflow_metrics_path,
+                project_dir=self.workflow_project_dir,
+                workflow_mode="execution_only",
+                trigger="builtin_framework",
+            )
+            stage_id = start_stage(
+                self.workflow_metrics_path,
+                run_id=run_id,
+                name="browser_execution",
+                executor="deterministic",
+            )
+            return {"run_id": run_id, "stage_id": stage_id, "created": created}
+        except Exception as exc:
+            print(f"WARNING: unable to start workflow resource accounting: {exc}")
+            return None
+
+    def _finish_workflow_metrics(self, context, status):
+        if not context:
+            return
+        try:
+            finish_stage(
+                self.workflow_metrics_path,
+                run_id=context["run_id"],
+                stage=context["stage_id"],
+                status=status,
+            )
+            if context["created"]:
+                finalize_run(
+                    self.workflow_metrics_path,
+                    run_id=context["run_id"],
+                    status=status,
+                    note="Standalone built-in browser framework execution.",
+                )
+        except Exception as exc:
+            print(f"WARNING: unable to finish workflow resource accounting: {exc}")
+
+    def _run_all_impl(
         self,
         test_path=None,
         headless=False,

@@ -1,6 +1,6 @@
 # 已有测试用例规范化
 
-规范化时必须补齐 `execution_readiness` 并在正式用例表展示执行级别、人工介入说明、人工准备清单。原表只有优先级或自动化建议时，不能默认所有用例可自动运行；交易/付款/扫码标为 manual，人工前置列入准备事项，执行前展示并完成确认或人工跳过决定，详见 [human-readiness.md](human-readiness.md)。
+规范化时必须补齐 `execution_readiness` 并在正式用例表展示执行级别、人工介入说明、人工准备清单。原表只有优先级或自动化建议时，不能默认所有用例可自动运行；交易/付款/扫码标为 manual，人工前置列入准备事项，执行前展示并完成真实准备确认，详见 [human-readiness.md](human-readiness.md)。
 
 ## 目标
 
@@ -113,7 +113,7 @@ case_source:
   generation_mode: case_normalization
   requirement_source: prd              # 或 existing_xlsx_baseline
   requirement_completeness: assessed   # 无 PRD 时必须为 not_assessed
-  priority_policy: strict_p0_p1_p2
+  priority_policy: risk_first_configurable
 ```
 
 每条最终用例声明：
@@ -143,13 +143,13 @@ normalization_trace:
 - `case_ordering.source` 使用原 Excel 文件和工作表。
 - 可以审计内部一致性、独立性和可执行性，也可以补齐实现执行所需的结构字段。
 - 评审和报告必须写明 `requirement_completeness: not_assessed`，不得宣称需求覆盖完整，也不得仅为了让用例数大于需求数而虚构需求。
-- 如果现有用例无法形成“用例数大于需求数”的合法需求聚合，停止在 `revise_required`，要求补充 PRD 或人工确认需求分组。
+- 新质量契约按可证实的基线事实和 N_min 校验，不为“用例数大于需求数”强行聚合或增加用例。存量兼容审计仍保留旧关系检查；不满足时优先迁移契约或补充可核对的来源。
 
 ## 审计与变更记录
 
 评审文档必须新增规范化摘要：
 
-- 输入行数、成功导入数、跳过行及原因；
+- 输入行数、成功导入数、未纳入的行及原因；
 - 原样保留、修订、拆分、合并、新增、拒绝六类数量；
 - 每条发生语义变化的用例对应源行、变更前后内容和理由；
 - 重复 ID、缺字段、跨用例依赖、多断言、非标准优先级清单；
@@ -168,7 +168,7 @@ normalization_trace:
 5. `08_测试用例_模板版.xlsx` 与最终 YAML 的 ID、数量和顺序一致；
 6. 环境信息足以生成执行计划和项目脚本。
 
-原 Excel 可以作为 `generate_case_xlsx.py --template` 的模板底稿。无法映射到正式七列的附加列应保留，不得破坏用户原有审阅信息。
+原 Excel 可以作为 `generate_case_xlsx.py --template` 的模板底稿。无法映射到正式业务列和人工准备列的附加列应保留，不得破坏用户原有审阅信息。
 
 ## 子用例结果反向聚合到原始用例
 
@@ -202,3 +202,12 @@ py references/scripts/validate_case_design.py `
   --existing-case-import <项目目录>/03_existing_cases_import.yaml `
   --output <项目目录>/07_case_design_gate.json
 ```
+
+
+## Excel 基线与 V4 质量契约
+
+无 PRD 的规范化仍启用质量契约，但 `generation_scope.source_policy: current_xlsx_baseline`、`historical_case_reuse: supplied_baseline_only`；最终源保留 `requirement_source: existing_xlsx_baseline` 和 `requirement_completeness: not_assessed`。`source_documents` 使用 `source_type: existing_xlsx_baseline`，其 `sha256` 必须匹配导入账本；每条条款和原子规则的 `source_locator` 使用真实 `sheet`、整数 `row`，原文摘录来自原工作簿。覆盖下限仅代表基线事实的最低设计规模，不代表完整 PRD 覆盖。提供 PRD 时用 `current_prd_only`，原 Excel 仅作为用户提供的可复用资产。
+
+存量链先用 `--legacy-audit` 排查迁移缺口；该模式仍校验原子账本、执行语义和来源等基础结构，不代表 V4 质量契约合规。`backfill_quality_fields.py` 只按已有明确事实派生字段；未明确的前置数据来源、步骤目标、评审结论和原文覆盖完整性必须补充后重新运行严格门禁。
+
+XLSX-only 独立评审的 source_artifacts 使用 current_xlsx_baseline 与 normative_statements，不要求填写不存在的 current_prd。risk-first 缺少某个优先级时，review_audit.priority_coverage_rationale 必须逐档说明依据；无需为三档配额伪造用例。显式 l2_only 必须在 generation_scope、coverage_profile 和 case_source 三处一致声明；它是限定范围，不能作为 full 交付。

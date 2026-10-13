@@ -130,6 +130,7 @@ py references/scripts/validate_execution_plan.py `
   --case-gate <项目目录>/07_case_design_gate.json `
   --final-cases <项目目录>/06_final_test_cases.yaml `
   --execution-plan <项目目录>/10_browser_execution_plan.yaml `
+  --require-resource-accounting `
   --output <项目目录>/10_execution_plan_gate.json
 ```
 
@@ -214,6 +215,9 @@ py references/scripts/validate_execution_delivery.py `
   --execution-plan <项目目录>/10_browser_execution_plan.yaml `
   --execution-results <项目目录>/11_test_execution_results.yaml `
   --screenshots-dir <项目目录>/artifacts/screenshots `
+  --require-resource-accounting `
+  --run-metrics <项目目录>/20_workflow_run_metrics.json `
+  --workflow-run-id <本轮运行ID> `
   --output <项目目录>/12_execution_gate.json
 ```
 

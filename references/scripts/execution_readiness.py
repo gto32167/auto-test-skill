@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import re
+import hashlib
+import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,7 +12,7 @@ from workflow_gate_common import as_list, text
 
 LEVEL_LABELS = {"auto": "可自动执行", "assisted": "人工准备后自动执行", "manual": "必须人工执行"}
 CASE_HEADERS = ["用例ID", "功能集合", "用例名称", "优先级", "执行级别", "人工介入说明", "人工准备清单", "前置条件", "执行步骤", "预期结果"]
-NON_RUN_REASONS = {"manual": "manual_execution_required", "skip": "human_preflight_skip"}
+NON_RUN_REASONS = {"manual": "manual_execution_required"}
 
 
 def readiness(case: dict[str, Any]) -> dict[str, Any]:
@@ -18,16 +20,91 @@ def readiness(case: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def core_action_texts(case: dict[str, Any]) -> list[str]:
+    """Use formal actions when present; normalized 'execute' steps keep input."""
+    source = case.get("formal_steps") or case.get("steps")
+    return [
+        " ".join(text(step.get(field)) for field in ("action", "formal_text", "input") if text(step.get(field)))
+        if isinstance(step, dict) else text(step)
+        for step in as_list(source)
+    ]
+
+
+def core_actions_sha256(actions: list[str]) -> str:
+    return hashlib.sha256(json.dumps(actions, ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+
+def _actual_transaction_action(action: str) -> bool:
+    # Reading payment fields and changing refund configuration are business UI
+    # actions; submitting money movement or running a refund task is different.
+    value = re.sub(r"[【】\[\]（）()\s]", "", action)
+    readonly = bool(re.match(r"^(查看|查询|核对|与.+核对|展示|检查|展开|选择|输入|清空|修改|将|进入|打开|刷新|取消|关闭)", value))
+    if not readonly and re.search(r"扫码|扫描.*(?:码|二维码)|\b(?:qr_scan|scan_qr)\b", value, re.I):
+        return True
+    if re.search(r"(?:并|然后|后)(?:使用.*)?(?:扫码|扫描.*码)", value):
+        return True
+    if re.search(r"(?:发起|触发|执行|完成|提交|尝试|确认|成功)(?:自动|每日|重新|进行|微信|渠道|实际|真实|一笔|.*?任务)?(?:支付|付款|退款|交易|转账|扣款)", value):
+        return True
+    if re.search(r"点击(?:确认)?(?:立即)?(?:支付|付款|确认重新退款|确认退款|提交退款|发起退款)", value):
+        return True
+    if re.search(r"(?:用户)?成功购买|^(?:购买|下单并支付)(?:付费|商品|券包|订单)", value):
+        return True
+    if re.search(r"\b(?:click|press|submit|confirm|execute|trigger|perform)\b.*\b(?:payment|pay|refund|transaction)\b", action, re.I):
+        return True
+    return bool(re.search(r"\b(?:pay|submit_payment|confirm_payment|execute_refund|submit_refund|confirm_refund|transaction|qr_scan|scan_qr)\b", action, re.I))
+
+
+def _valid_non_transaction_review(case: dict[str, Any], actions: list[str]) -> bool:
+    review = case.get("core_operation_review")
+    if not isinstance(review, dict) or review.get("classification") != "automation_core":
+        return False
+    if not text(review.get("reviewed_by")) or not text(review.get("reason")):
+        return False
+    if review.get("core_actions") != actions or review.get("core_actions_sha256") != core_actions_sha256(actions):
+        return False
+    allowed = r"^(查看|查询|核对|与.+核对|使用.+登录|展示|检查|展开|选择|输入|清空|修改|将|进入|打开|刷新|取消|关闭|点击|分别|重新进入|等待|按|尝试查找|直接访问|创建活动)"
+    if not actions or any(not re.match(allowed, action) for action in actions):
+        return False
+    # Opening a retry-refund dialog is safe only when that exact operation was
+    # reviewed as preview-only. A later confirmation always wins above.
+    if any(re.search(r"点击.*重新退款", action) for action in actions):
+        if review.get("operation_scope") != "confirmation_dialog_only":
+            return False
+        title = text(case.get("formal_case_title") or case.get("case_title"))
+        if "打开确认弹窗" not in title or len(actions) != 1:
+            return False
+    return True
+
+
 def requires_manual(case: dict[str, Any]) -> bool:
-    # Only core business text: prerequisites such as a pre-existing paid order
-    # must not accidentally turn an order-query case into a payment case.
-    parts = [text(case.get("operation_type")), text(case.get("case_title")), text(case.get("formal_case_title"))]
-    for key in ("steps", "formal_steps"):
-        for step in as_list(case.get(key)):
-            parts.append(" ".join(text(step.get(field)) for field in ("action", "target", "formal_text")) if isinstance(step, dict) else text(step))
-    value = " ".join(parts)
-    value = re.sub(r"已(?:付款|支付)(?:成功)?", "", value)
-    return bool(re.search(r"扫码|扫描二维码|交易|付款|支付|\b(payment|transaction|qr_scan|scan_qr)\b", value, re.I))
+    actions = core_action_texts(case)
+    operation = text(case.get("operation_type"))
+    if re.fullmatch(r"payment|transaction|qr_scan|scan_qr|refund|execute_refund", operation, re.I):
+        return True
+    if any(_actual_transaction_action(action) for action in actions):
+        return True
+    # Structured cases may split 'click' and 'payment button' into action and
+    # target; the target must not disappear from the submission guard.
+    for step in as_list(case.get("formal_steps") or case.get("steps")):
+        if isinstance(step, dict) and _actual_transaction_action(
+            " ".join(text(step.get(field)) for field in ("action", "formal_text", "input", "target"))
+        ):
+            return True
+    if _valid_non_transaction_review(case, actions):
+        return False
+    if not case.get("core_operation_review") and actions and all(
+        re.match(r"^(查看|查询|核对|与.+核对|展示|检查)", action) for action in actions
+    ):
+        return False
+    parts = [operation, text(case.get("case_title")), text(case.get("formal_case_title")), *actions]
+    value = re.sub(r"已(?:付款|支付)(?:成功)?", "", " ".join(parts))
+    # A field name alone is not evidence of money movement. Without reviewed
+    # actions, retain conservative treatment of actual payment/scan titles.
+    value = re.sub(r"(?:微信)?(?:支付|付款|交易)(?:流水单号|交易单号|单号|金额|时间|状态|字段|结果|信息)", "", value)
+    value = re.sub(r"查看(?:三种状态的)?[【】]*重新退款[【】]*按钮", "", value)
+    if any(re.search(r"点击.*重新退款", action) for action in actions):
+        return True
+    return bool(re.search(r"扫码|扫描.*码|交易|付款|支付|\b(payment|transaction|qr_scan|scan_qr)\b", value, re.I))
 
 
 def validate_case_readiness(case: dict[str, Any]) -> list[str]:
@@ -107,16 +184,19 @@ def validate_preflight(cases: list[dict[str, Any]], plans: list[dict[str, Any]],
         if not isinstance(decision, dict):
             decision = {}
         route = disposition(plan)
-        if route not in {"run", "skip", "manual"}:
-            errors.append(f"{label} 执行前必须决定 run/skip/manual，不能带着待准备状态开跑")
-        if case_ready.get("level") == "manual" and route not in {"manual", "skip"}:
+        if route == "skip":
+            errors.append(f"{label} 不允许使用 skip；请完成准备后 run，或明确移交 manual")
+            continue
+        if route not in {"run", "manual"}:
+            errors.append(f"{label} 执行前必须决定 run/manual；未完成准备不能跳过，必须先补齐准备事项")
+        if case_ready.get("level") == "manual" and route != "manual":
             errors.append(f"{label} 必须人工执行，禁止加入自动执行队列")
         if case_ready.get("level") != "manual" and route == "manual":
             errors.append(f"{label} 人工执行分级与执行计划不一致")
-        if route in {"manual", "skip"}:
-            errors.extend(_confirmed(decision, f"{label} 人工分流/跳过决定"))
+        if route == "manual":
+            errors.extend(_confirmed(decision, f"{label} 人工移交决定"))
             if not text(decision.get("reason")):
-                errors.append(f"{label} 人工分流/跳过必须说明原因")
+                errors.append(f"{label} 人工移交必须说明原因")
         confirmations = decision.get("preparations", [])
         if not isinstance(confirmations, list) or any(not isinstance(item, dict) for item in confirmations):
             errors.append(f"{label} 准备确认必须是列表")
@@ -130,7 +210,7 @@ def validate_preflight(cases: list[dict[str, Any]], plans: list[dict[str, Any]],
             if state not in {"pending", "ready"}:
                 errors.append(f"{label} 准备事项 {item.get('id')} 状态必须是 pending/ready")
             if route == "run" and state != "ready":
-                errors.append(f"{label} 尚未准备好 {item.get('id')}；请先准备数据，或由人工标记 skip")
+                errors.append(f"{label} 尚未准备好 {item.get('id')}；必须先准备数据，不能跳过")
             if state == "ready":
                 errors.extend(_confirmed(item, f"{label} 准备事项 {item.get('id')}"))
                 if not text(item.get("evidence")):
@@ -151,7 +231,7 @@ def readiness_columns(case: dict[str, Any]) -> dict[str, str]:
 
 def write_preflight_report(path: Path, cases: list[dict[str, Any]], plans: list[dict[str, Any]], errors: list[str]) -> None:
     by_id = {text(plan.get("case_id")): plan for plan in plans}
-    lines = ["# 自动化开始前的人工准备清单", "", "请先处理下面的人工事项：准备完成并留下确认记录，或明确标记跳过。必须人工执行的用例不会加入自动执行队列。", ""]
+    lines = ["# 自动化开始前的人工准备清单", "", "请先处理下面的人工事项：准备完成并留下确认记录。准备未完成时批次停止，不能跳过；必须人工执行的用例交给测试人员执行。", ""]
     for case in cases:
         plan = by_id.get(text(case.get("case_id")), {})
         if readiness(case).get("level") == "auto" and disposition(plan) == "run":
@@ -161,7 +241,7 @@ def write_preflight_report(path: Path, cases: list[dict[str, Any]], plans: list[
         decision = decision if isinstance(decision, dict) else {}
         states = {text(item.get("id")): item for item in as_list(decision.get("preparations")) if isinstance(item, dict)}
         title = text(case.get("formal_case_title") or case.get("case_title") or case.get("title"))
-        lines += [f"## {text(case.get('case_id'))} · {title}", "", f"- 执行级别：**{columns['执行级别']}**", f"- 原因和人工操作：{columns['人工介入说明']}", f"- 本轮安排：{ {'run': '准备确认后自动执行', 'skip': '人工已标记跳过', 'manual': '交给人工执行'}.get(disposition(plan), '尚未决定，请先处理')}"]
+        lines += [f"## {text(case.get('case_id'))} · {title}", "", f"- 执行级别：**{columns['执行级别']}**", f"- 原因和人工操作：{columns['人工介入说明']}", f"- 本轮安排：{ {'run': '准备确认后自动执行', 'manual': '交给人工执行'}.get(disposition(plan), '尚未决定，请先处理')}"]
         if text(decision.get("reason")):
             lines.append(f"- 安排原因：{text(decision.get('reason'))}")
         for item in as_list(readiness(case).get("preparations")):

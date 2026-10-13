@@ -94,3 +94,7 @@
 | `23_正式测试报告.docx` | 正式报告 |
 
 模板、字段和命令行参数以 `assets/templates/` 与 `delivery-gates.md` 为准。本文件只负责阶段路由，不复制各专项规则正文。
+
+## V4 资源核算
+
+使用 `references/scripts/workflow_run_metrics.py` 维护项目根目录的 `20_workflow_run_metrics.json`；内置 `run_tests.py` 自动记录 browser_execution 阶段。计划和执行结果声明 `resource_accounting_version: "1.0"`，新运行的计划与执行/交付门禁必须传 `--require-resource-accounting`。模型 usage 不可取得时记录 unavailable 和原因，不填假 0。详情见 [resource-accounting.md](resource-accounting.md)。

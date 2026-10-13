@@ -7,6 +7,7 @@ execution_meta:
   execution_plan_sha256: "从 10_execution_plan_gate.json 复制执行计划 SHA-256"
   execution_plan_gate_path: "10_execution_plan_gate.json"
   semantic_contract_version: "2.0"
+  resource_accounting_version: "1.0"
   execution_mode: "qualification"
   priority_execution_policy:
     version: "1.1"
@@ -24,6 +25,7 @@ execution_meta:
     p0_blocked: 0
     triggered: false
     reason_code: ""
+    # 仅表示 P0 全失败后的下游优先级停止，不表示人工准备 skip。
     skipped_priorities: []
     not_run_case_ids: []
   retry_policy_version: "3.0"
@@ -56,8 +58,19 @@ execution_meta:
   resource_budget:
     estimated_attempts: 6
     estimated_minutes: 30
+    estimated_model_tokens: null
+    token_budget_policy:
+      quality_constraints_may_not_be_reduced: true
+      checkpoint_on_overrun: true
     actual_attempts: 7
     actual_minutes: 34
+  # 完整明细只保存在独立 JSON，避免把大账本复制进执行结果。
+  workflow_run_metrics:
+    path: "20_workflow_run_metrics.json"
+    run_id: "RUN-YYYYMMDD_HHMMSS-xxxxxxxx"
+    status: "completed"
+    duration_seconds: 2040
+    measurement_status: "exact" # exact | partial | unavailable | not_applicable
 
 execution_results:
   - execution_id: "EXE-001"
@@ -187,18 +200,35 @@ execution_results:
       key_message: "持久化值一致"
       mutation: true
       object_id: "goods_id=12346"
-    observations: &tc002_observations
+    # UI 观察值的 evidence_refs 必须指向本结果/本 attempt 自身声明的截图；
+    # 锚点按 attempt 拆分（A1/A2），最终结果引用选中 attempt 的截图集合。
+    observations: &tc002_obs_a1
       object_id: {value: "12346", source: "api", evidence_refs: ["api:goods/12346"]}
       input_value: {value: "QA商品ABC123", source: "runtime", evidence_refs: ["runtime/TC-002_execution.json"]}
-      persisted_value: {value: "QA商品ABC123", source: "ui", evidence_refs: ["TC-002.png"]}
+      persisted_value: {value: "QA商品ABC123", source: "ui", evidence_refs: ["TC-002_A1_after.png"]}
       persistence_verified: {value: true, source: "runtime", evidence_refs: ["runtime/TC-002_execution.json"]}
       mutation_committed: {value: true, source: "api", evidence_refs: ["api:goods/12346"]}
+      before_state: {value: "提交前商品列表不存在同名商品，表单保留输入值 QA商品ABC123", source: "ui", evidence_refs: ["TC-002_A1_before.png"]}
+      after_state: {value: "重新打开 goods_id=12346 后商品名称回显 QA商品ABC123", source: "ui", evidence_refs: ["TC-002_A1_after.png"]}
+      changed: {value: true, source: "runtime", evidence_refs: ["runtime/TC-002_change_comparison.json"]}
+      comparison_verified: {value: true, source: "runtime", evidence_refs: ["runtime/TC-002_change_comparison.json"]}
     produced_data: &tc002_produced
       object_id: "12346"
       input_value: "QA商品ABC123"
       persisted_value: "QA商品ABC123"
       persistence_verified: true
       mutation_committed: true
+      before_state: "提交前商品列表不存在同名商品，表单保留输入值 QA商品ABC123"
+      after_state: "重新打开 goods_id=12346 后商品名称回显 QA商品ABC123"
+      changed: true
+      comparison_verified: true
+    # 变化类用例（change_evidence.required: true）的最终结果与每个 attempt 都必须
+    # 携带 change_comparison；最终截图取自选中 attempt 的 after 图。
+    change_comparison: &tc002_change_comparison
+      before_value: "提交前商品列表不存在同名商品，表单保留输入值 QA商品ABC123"
+      after_value: "重新打开 goods_id=12346 后商品名称回显 QA商品ABC123"
+      changed: true
+      comparison_verified: true
     selected_attempt: 1
     retry_policy:
       minimum_attempts: 2
@@ -213,36 +243,84 @@ execution_results:
         status: "passed"
         semantic_contract_sha256: *tc002_hash
         execution_trace: *tc002_trace
-        observations: *tc002_observations
+        observations: *tc002_obs_a1
         produced_data: *tc002_produced
+        change_comparison: *tc002_change_comparison
         evidence:
-          screenshots: ["artifacts/screenshots/TC-002_A1_assertion.png"]
+          screenshots: ["artifacts/screenshots/TC-002_A1_before.png", "artifacts/screenshots/TC-002_A1_after.png"]
           manifest:
-            - {file: "TC-002_A1_assertion.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-002", attempt: 1, assertion_moment: "重新打开同一商品并读取名称回显", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["persisted_value"], content_text: "商品名称 QA商品ABC123", observed_target_text: "商品名称 QA商品ABC123", content_anchors: ["QA商品ABC123"], content_verified: true, verification_method: "text_anchor"}
+            - {file: "TC-002_A1_before.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-002", attempt: 1, phase: "before", assertion_moment: "保存动作发生前：同一时刻商品列表与表单状态", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["persisted_value", "before_state", "after_state"], content_text: "提交前商品列表不存在同名商品，表单保留输入值 QA商品ABC123", observed_target_text: "提交前商品列表不存在同名商品，表单保留输入值 QA商品ABC123", content_anchors: ["QA商品ABC123"], content_verified: true, verification_method: "text_anchor"}
+            - {file: "TC-002_A1_after.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-002", attempt: 1, phase: "after", assertion_moment: "重新打开同一商品并读取名称回显", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["persisted_value", "before_state", "after_state"], content_text: "商品名称 QA商品ABC123", observed_target_text: "商品名称 QA商品ABC123", content_anchors: ["QA商品ABC123"], content_verified: true, verification_method: "text_anchor"}
       - attempt: 2
         status: "passed"
         semantic_contract_sha256: *tc002_hash
         execution_trace: *tc002_trace
-        observations: *tc002_observations
+        observations: &tc002_obs_a2
+          object_id: {value: "12346", source: "api", evidence_refs: ["api:goods/12346"]}
+          input_value: {value: "QA商品ABC123", source: "runtime", evidence_refs: ["runtime/TC-002_execution.json"]}
+          persisted_value: {value: "QA商品ABC123", source: "ui", evidence_refs: ["TC-002_A2_after.png"]}
+          persistence_verified: {value: true, source: "runtime", evidence_refs: ["runtime/TC-002_execution.json"]}
+          mutation_committed: {value: true, source: "api", evidence_refs: ["api:goods/12346"]}
+          before_state: {value: "提交前商品列表不存在同名商品，表单保留输入值 QA商品ABC123", source: "ui", evidence_refs: ["TC-002_A2_before.png"]}
+          after_state: {value: "重新打开 goods_id=12346 后商品名称回显 QA商品ABC123", source: "ui", evidence_refs: ["TC-002_A2_after.png"]}
+          changed: {value: true, source: "runtime", evidence_refs: ["runtime/TC-002_change_comparison.json"]}
+          comparison_verified: {value: true, source: "runtime", evidence_refs: ["runtime/TC-002_change_comparison.json"]}
         produced_data: *tc002_produced
+        change_comparison: *tc002_change_comparison
         evidence:
-          screenshots: ["artifacts/screenshots/TC-002_A2_assertion.png"]
+          screenshots: ["artifacts/screenshots/TC-002_A2_before.png", "artifacts/screenshots/TC-002_A2_after.png"]
           manifest:
-            - {file: "TC-002_A2_assertion.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-002", attempt: 2, assertion_moment: "重新打开同一商品并读取名称回显", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["persisted_value"], content_text: "商品名称 QA商品ABC123", observed_target_text: "商品名称 QA商品ABC123", content_anchors: ["QA商品ABC123"], content_verified: true, verification_method: "text_anchor"}
+            - {file: "TC-002_A2_before.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-002", attempt: 2, phase: "before", assertion_moment: "保存动作发生前：同一时刻商品列表与表单状态", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["persisted_value", "before_state", "after_state"], content_text: "提交前商品列表不存在同名商品，表单保留输入值 QA商品ABC123", observed_target_text: "提交前商品列表不存在同名商品，表单保留输入值 QA商品ABC123", content_anchors: ["QA商品ABC123"], content_verified: true, verification_method: "text_anchor"}
+            - {file: "TC-002_A2_after.png", sha256: "替换为本轮截图文件的64位SHA-256", case_id: "TC-002", attempt: 2, phase: "after", assertion_moment: "重新打开同一商品并读取名称回显", target: "商品名称表单项", browser: "chromium", headless: false, evidence_scope: "assertion_target_container", semantic_keys: ["persisted_value", "before_state", "after_state"], content_text: "商品名称 QA商品ABC123", observed_target_text: "商品名称 QA商品ABC123", content_anchors: ["QA商品ABC123"], content_verified: true, verification_method: "text_anchor"}
     evidence:
-      screenshots: ["artifacts/screenshots/TC-002.png"]
+      screenshots: ["artifacts/screenshots/TC-002.png", "artifacts/screenshots/TC-002_A1_before.png", "artifacts/screenshots/TC-002_A1_after.png"]
       manifest:
         - file: "TC-002.png"
           sha256: "替换为截图文件的64位SHA-256"
           case_id: "TC-002"
+          phase: "after"
           assertion_moment: "保存后重新打开同一商品并读取名称回显"
           target: "商品名称表单项"
           browser: "chromium"
           headless: false
           selected_attempt: 1
-          source_attempt_file: "TC-002_A1_assertion.png"
+          source_attempt_file: "TC-002_A1_after.png"
           evidence_scope: "assertion_target_container"
-          semantic_keys: ["persisted_value"]
+          semantic_keys: ["persisted_value", "before_state", "after_state"]
+          content_text: "商品名称 QA商品ABC123"
+          observed_target_text: "商品名称 QA商品ABC123"
+          content_anchors: ["QA商品ABC123"]
+          content_verified: true
+          verification_method: "text_anchor"
+        - file: "TC-002_A1_before.png"
+          sha256: "替换为本轮截图文件的64位SHA-256"
+          case_id: "TC-002"
+          phase: "before"
+          assertion_moment: "保存动作发生前：同一时刻商品列表与表单状态"
+          target: "商品名称表单项"
+          browser: "chromium"
+          headless: false
+          selected_attempt: 1
+          source_attempt_file: "TC-002_A1_before.png"
+          evidence_scope: "assertion_target_container"
+          semantic_keys: ["before_state"]
+          content_text: "提交前商品列表不存在同名商品，表单保留输入值 QA商品ABC123"
+          observed_target_text: "提交前商品列表不存在同名商品，表单保留输入值 QA商品ABC123"
+          content_anchors: ["QA商品ABC123"]
+          content_verified: true
+          verification_method: "text_anchor"
+        - file: "TC-002_A1_after.png"
+          sha256: "替换为本轮截图文件的64位SHA-256"
+          case_id: "TC-002"
+          phase: "after"
+          assertion_moment: "保存后重新打开同一商品并读取名称回显"
+          target: "商品名称表单项"
+          browser: "chromium"
+          headless: false
+          selected_attempt: 1
+          source_attempt_file: "TC-002_A1_after.png"
+          evidence_scope: "assertion_target_container"
+          semantic_keys: ["after_state"]
           content_text: "商品名称 QA商品ABC123"
           observed_target_text: "商品名称 QA商品ABC123"
           content_anchors: ["QA商品ABC123"]
@@ -296,7 +374,9 @@ execution_results:
         status: "failed"
         semantic_contract_sha256: *tc003_hash
         execution_trace: *tc003_trace
-        observations: *tc003_failed_observations
+        observations: &tc003_obs_a1
+          prompt_text: {value: "商品名称不能为空", source: "ui", evidence_refs: ["TC-003_A1_assertion.png"]}
+          mutation_committed: {value: true, source: "api", evidence_refs: ["api:goods/12347"]}
         produced_data: *tc003_failed_produced
         feedback_observation: {presentation: "inline", text: "商品名称不能为空", appeared_after_ms: 1021, auto_dismissed: true, screenshot_path: "TC-003_A1_assertion.png"}
         evidence:
@@ -307,7 +387,9 @@ execution_results:
         status: "failed"
         semantic_contract_sha256: *tc003_hash
         execution_trace: *tc003_trace
-        observations: *tc003_failed_observations
+        observations: &tc003_obs_a2
+          prompt_text: {value: "商品名称不能为空", source: "ui", evidence_refs: ["TC-003_A2_assertion.png"]}
+          mutation_committed: {value: true, source: "api", evidence_refs: ["api:goods/12347"]}
         produced_data: *tc003_failed_produced
         feedback_observation: {presentation: "inline", text: "商品名称不能为空", appeared_after_ms: 986, auto_dismissed: true, screenshot_path: "TC-003_A2_assertion.png"}
         evidence:
@@ -318,7 +400,9 @@ execution_results:
         status: "failed"
         semantic_contract_sha256: *tc003_hash
         execution_trace: *tc003_trace
-        observations: *tc003_failed_observations
+        observations: &tc003_obs_a3
+          prompt_text: {value: "商品名称不能为空", source: "ui", evidence_refs: ["TC-003_A3_assertion.png"]}
+          mutation_committed: {value: true, source: "api", evidence_refs: ["api:goods/12347"]}
         produced_data: *tc003_failed_produced
         feedback_observation: {presentation: "inline", text: "商品名称不能为空", appeared_after_ms: 1046, auto_dismissed: true, screenshot_path: "TC-003_A3_assertion.png"}
         evidence:
